@@ -1,0 +1,32 @@
+# === Python / Virtual Environments ===
+# No subimos las librerías instaladas, solo el requirements.txt
+.venv/
+venv/
+ENV/
+__pycache__/
+*.py[cod]
+*$py.class
+
+# === Inteligencia Artificial (Modelos) ===
+# Los archivos .onnx suelen ser pesados. Si superan los 100MB, 
+# es mejor no subirlos a GitHub y compartirlos por drive o lfs.
+*.onnx
+
+# === Seguridad y Certificados (CRÍTICO) ===
+# NUNCA subas tus llaves privadas o certificados generados
+*.pem
+mkcert.exe
+
+# === Multimedia / Datos ===
+# No subimos las fotos de prueba o detecciones guardadas en static
+static/*
+!static/.gitkeep
+
+# === Hardware / Comunicación ===
+# Archivos temporales de logs de serial o arduino si los hubiera
+*.log
+
+# # === Sistema Operativo ===
+# .DS_Store
+# Thumbs.db
+# desktop.ini

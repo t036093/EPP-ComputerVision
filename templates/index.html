@@ -1,0 +1,350 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <!-- ==============================
+       CONFIGURACIÓN GENERAL
+       ============================== -->
+  <meta charset="UTF-8" />
+  <!-- Hace responsive la página -->
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>EPP WebSocket</title>
+
+  <!-- ==============================
+       ESTILOS (CSS)
+       ============================== -->
+  <style>
+    /* Estilo general del body */
+    body {
+      margin: 0;
+      padding: 20px;
+      font-family: Arial, sans-serif;
+      background: #111;
+      color: white;
+    }
+
+    /* Contenedor principal centrado */
+    .container {
+      max-width: 900px;
+      margin: 0 auto;
+    }
+
+    /* Contenedor del video y canvas */
+    .video-container {
+      position: relative;
+      width: 100%;
+      max-width: 800px;
+      aspect-ratio: 4/3;
+      background: black;
+      overflow: hidden;
+      border: 2px solid #333;
+    }
+
+    /* Video y canvas superpuestos */
+    video, canvas {
+      position: absolute;
+      width: 100%;
+      height: 100%;
+      left: 0;
+      top: 0;
+    }
+
+    /* Botones */
+    .controls {
+      margin-top: 15px;
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+
+    button {
+      padding: 10px 16px;
+      font-size: 16px;
+      cursor: pointer;
+    }
+
+    /* Texto de estado */
+    .status {
+      margin-top: 15px;
+      font-size: 20px;
+      font-weight: bold;
+    }
+
+    /* Lista de detecciones */
+    #detectionsList {
+      margin-top: 15px;
+    }
+  </style>
+</head>
+
+<body>
+  <div class="container">
+    <h1>Detección EPP (WebSocket)</h1>
+
+    <!-- ==============================
+         VIDEO + CANVAS (OVERLAY)
+         ============================== -->
+    <div class="video-container">
+      <!-- Video en tiempo real -->
+      <video id="video" autoplay playsinline muted></video>
+
+      <!-- Canvas donde se dibujan los bounding boxes -->
+      <canvas id="overlay"></canvas>
+    </div>
+
+    <!-- ==============================
+         CONTROLES
+         ============================== -->
+    <div class="controls">
+      <button onclick="startCamera()">Iniciar cámara</button>
+      <button onclick="connectWS()">Conectar WebSocket</button>
+      <button onclick="startDetection()">Iniciar detección</button>
+      <button onclick="stopDetection()">Detener detección</button>
+    </div>
+
+    <!-- ==============================
+         ESTADO DEL SISTEMA
+         ============================== -->
+    <div class="status">
+      Estado: <span id="statusText">Sin iniciar</span>
+    </div>
+
+    <!-- Lista de detecciones -->
+    <ul id="detectionsList"></ul>
+  </div>
+
+  <script>
+    // ==============================
+    // REFERENCIAS DOM
+    // ==============================
+    const video = document.getElementById("video");
+    const overlay = document.getElementById("overlay");
+
+    // Contexto 2D del canvas (para dibujar)
+    const ctx = overlay.getContext("2d");
+
+    const statusText = document.getElementById("statusText");
+    const detectionsList = document.getElementById("detectionsList");
+
+    // ==============================
+    // VARIABLES DE ESTADO
+    // ==============================
+    let ws = null;        // conexión WebSocket
+    let stream = null;    // cámara
+    let interval = null;  // intervalo de envío
+    let sending = false;  // evita enviar múltiples frames al mismo tiempo
+
+    // Tamaño del modelo (debe coincidir con backend)
+    const MODEL_INPUT_W = 800;
+    const MODEL_INPUT_H = 800;
+
+    // ==============================
+    // INICIAR CÁMARA
+    // ==============================
+    async function startCamera() {
+      try {
+        // Solicita acceso a cámara frontal
+        stream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: "user" },
+          audio: false
+        });
+
+        // Asigna stream al video
+        video.srcObject = stream;
+
+        // Ajusta tamaño del canvas al video real
+        video.onloadedmetadata = () => {
+          overlay.width = video.videoWidth;
+          overlay.height = video.videoHeight;
+        };
+
+        statusText.textContent = "Cámara activa";
+        statusText.style.color = "white";
+      } catch (err) {
+        console.error(err);
+        statusText.textContent = "Error cámara";
+        statusText.style.color = "orange";
+      }
+    }
+
+    // ==============================
+    // CONECTAR WEBSOCKET
+    // ==============================
+    function connectWS() {
+      // Usa ws o wss dependiendo si es http o https
+      const protocol = location.protocol === "https:" ? "wss" : "ws";
+
+      // Crea conexión al backend
+      ws = new WebSocket(`${protocol}://${location.host}/ws`);
+
+      // Conexión abierta
+      ws.onopen = () => {
+        statusText.textContent = "WebSocket conectado";
+        statusText.style.color = "white";
+      };
+
+      // Mensajes recibidos del backend
+      ws.onmessage = (event) => {
+        const data = JSON.parse(event.data);
+        console.log("MENSAJE WS:", data);
+
+        // Manejo de error
+        if (data.error) {
+          statusText.textContent = data.error;
+          statusText.style.color = "orange";
+          return;
+        }
+
+        // Actualiza estado PASS / DENIED
+        statusText.textContent = data.status;
+        statusText.style.color = data.status === "PASS" ? "lime" : "red";
+
+        // Dibuja cajas y actualiza lista
+        drawBoxes(data.detections || []);
+        updateList(data.detections || []);
+      };
+
+      // Conexión cerrada
+      ws.onclose = () => {
+        statusText.textContent = "WebSocket cerrado";
+        statusText.style.color = "orange";
+      };
+
+      // Error en conexión
+      ws.onerror = (err) => {
+        console.error(err);
+        statusText.textContent = "Error WebSocket";
+        statusText.style.color = "orange";
+      };
+    }
+
+    // ==============================
+    // DIBUJAR BOUNDING BOXES
+    // ==============================
+    function drawBoxes(detections) {
+      // Limpia canvas
+      ctx.clearRect(0, 0, overlay.width, overlay.height);
+
+      // Escala de modelo → pantalla real
+      const scaleX = overlay.width / MODEL_INPUT_W;
+      const scaleY = overlay.height / MODEL_INPUT_H;
+
+      detections.forEach(det => {
+        if (!det.box || det.box.length < 4) return;
+
+        let [x1, y1, x2, y2] = det.box;
+
+        // Escala coordenadas
+        x1 *= scaleX;
+        x2 *= scaleX;
+        y1 *= scaleY;
+        y2 *= scaleY;
+
+        const boxW = x2 - x1;
+        const boxH = y2 - y1;
+
+        ctx.lineWidth = 3;
+
+        // Color dependiendo de cumplimiento
+        if (det.label === "HARDHAT" || det.label === "VEST") {
+          ctx.strokeStyle = "lime";
+          ctx.fillStyle = "lime";
+        } else {
+          ctx.strokeStyle = "red";
+          ctx.fillStyle = "red";
+        }
+
+        // Dibuja caja
+        ctx.strokeRect(x1, y1, boxW, boxH);
+
+        // Texto con etiqueta y score
+        ctx.font = "16px Arial";
+        const text = `${det.label} ${(det.score ?? 0).toFixed(2)}`;
+        const textY = y1 > 20 ? y1 - 6 : y1 + 18;
+        ctx.fillText(text, x1, textY);
+      });
+    }
+
+    // ==============================
+    // ACTUALIZAR LISTA DE DETECCIONES
+    // ==============================
+    function updateList(detections) {
+      detectionsList.innerHTML = "";
+
+      detections.forEach(det => {
+        const li = document.createElement("li");
+        li.textContent = `${det.label} (${(det.score ?? 0).toFixed(2)})`;
+        detectionsList.appendChild(li);
+      });
+    }
+
+    // ==============================
+    // CAPTURAR FRAME DEL VIDEO
+    // ==============================
+    async function captureFrame() {
+      const canvas = document.createElement("canvas");
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
+
+      const ctx2 = canvas.getContext("2d");
+
+      // Dibuja el frame actual del video en canvas
+      ctx2.drawImage(video, 0, 0);
+
+      // Convierte a base64
+      return canvas.toDataURL("image/jpeg", 0.7);
+    }
+
+    // ==============================
+    // ENVIAR FRAME AL BACKEND
+    // ==============================
+    async function sendFrame() {
+      // Validaciones
+      if (!ws || ws.readyState !== WebSocket.OPEN) return;
+      if (!video.videoWidth) return;
+      if (sending) return;
+
+      sending = true;
+
+      try {
+        const img = await captureFrame();
+
+        // Envía imagen en JSON
+        ws.send(JSON.stringify({ image: img }));
+      } catch (err) {
+        console.error(err);
+      } finally {
+        sending = false;
+      }
+    }
+
+    // ==============================
+    // INICIAR DETECCIÓN CONTINUA
+    // ==============================
+    function startDetection() {
+      if (interval) return;
+
+      // Envía frames cada 300 ms
+      interval = setInterval(sendFrame, 300);
+
+      statusText.textContent = "Detectando...";
+      statusText.style.color = "white";
+    }
+
+    // ==============================
+    // DETENER DETECCIÓN
+    // ==============================
+    function stopDetection() {
+      if (interval) {
+        clearInterval(interval);
+        interval = null;
+      }
+
+      // Limpia canvas y estado
+      ctx.clearRect(0, 0, overlay.width, overlay.height);
+      statusText.textContent = "Detenido";
+      statusText.style.color = "white";
+      detectionsList.innerHTML = "";
+    }
+  </script>
+</body>
+</html>
