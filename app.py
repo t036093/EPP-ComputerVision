@@ -4,28 +4,31 @@
 # FastAPI: framework para crear el servidor web
 # WebSocket: permite comunicación en tiempo real con el frontend
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
-
 # Para servir archivos (HTML, JS, etc.)
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
-
 # ONNX Runtime: ejecuta el modelo de IA
 import onnxruntime as ort
-
 # NumPy: manejo de arreglos (imágenes, tensores)
 import numpy as np
-
 # OpenCV: procesamiento de imágenes
 import cv2
-
 # Base64: decodificar imágenes enviadas desde el navegador
 import base64
-
 # JSON: comunicación entre frontend y backend
 import json
 # Serial: comunicación con Arduino (control de acceso físico)
 import serial
 import time
+from typing import List
+import asyncio
+
+# Variable global para persistir estadísticas durante la sesión
+stats_global = {
+    "PASS": 0,
+    "DENIED": 0,
+    "TOTAL": 0
+}
 
 #==============================
 # CONFIGURACIÓN DE ARDUINO
@@ -81,6 +84,10 @@ def root():
     # Devuelve el archivo index.html al entrar a la página
     return FileResponse("templates/index.html")
 
+@app.get("/admin")
+def get_admin():
+    """Vista completa: Estadísticas y controles de flujo"""
+    return FileResponse("templates/admin.html")
 
 # ==============================
 # DECODIFICAR IMAGEN BASE64
@@ -107,7 +114,6 @@ def decode_base64_image(data_url: str):
     image = cv2.imdecode(np_arr, cv2.IMREAD_COLOR)
 
     return image
-
 
 # ==============================
 # PREPROCESAMIENTO + INFERENCIA
@@ -230,42 +236,58 @@ def parse_model_output(outputs, conf_threshold=0.75):
 # ==============================
 # LÓGICA DE DECISIÓN (EPP)
 # ==============================
+# --- Modifica evaluate_status para actualizar los números ---
+
 def evaluate_status(detections):
-    """
-    Determina si el usuario cumple con el EPP:
-    - PASS: tiene casco y chaleco
-    - DENIED: falta alguno o hay violación
-    """
-
+    global stats_global
     labels = [d["label"] for d in detections]
-
-    # Si detecta incumplimiento → DENIED
-    if "NO_HARDHAT" in labels or "NO_VEST" in labels:
-        # mandar_denegado()
-        return "DENIED"
-
-    # Si tiene ambos → PASS
+    
+    # Lógica de decisión
     if "HARDHAT" in labels and "VEST" in labels:
-        # mandar_acceso()
-        return "PASS"
+        current_status = "PASS"
+    else:
+        current_status = "DENIED"
+    
+    # Actualizamos el contador global
+    stats_global["TOTAL"] += 1
+    stats_global[current_status] += 1
+    
+    return current_status
 
-    # Caso intermedio → DENIED
-    # mandar_denegado()
-    return "DENIED"
+
 
 # ==============================
 # WEBSOCKET (TIEMPO REAL)
 # ==============================
+active_connections: List[dict] = []
+
 @app.websocket("/ws")
-async def websocket_endpoint(websocket: WebSocket):
+async def websocket_endpoint(websocket: WebSocket, client_type: str = "kiosk"):
     # Acepta conexión del cliente
     await websocket.accept()
+    
+    client_info = {
+        "ws": websocket,
+        "client_type": client_type,
+        "frame_counter": 0
+    }
+    active_connections.append(client_info)
 
     try:
         while True:
             # Recibe mensaje del frontend
             message = await websocket.receive_text()
             data = json.loads(message)
+
+            # Verifica si es un comando (ej. start_kiosk)
+            action = data.get("action")
+            if action:
+                # Retransmitir a todos los clientes asincrónicamente
+                payload = json.dumps({"action": action})
+                tasks = [client["ws"].send_text(payload) for client in active_connections]
+                if tasks:
+                    await asyncio.gather(*tasks, return_exceptions=True)
+                continue
 
             # Extrae imagen enviada
             image_data = data.get("image")
@@ -297,16 +319,43 @@ async def websocket_endpoint(websocket: WebSocket):
                 detections = []
                 status = "ERROR"
 
-            # Debug
-            print("=== MENSAJE ENVIADO AL FRONTEND ===")
-            print(detections)
-
-            # Envía resultados al frontend
-            await websocket.send_text(json.dumps({
+            # 1. Payload base para todos
+            payload_data = {
                 "detections": detections,
-                "status": status
-            }))
+                "status": status,
+                "stats": stats_global
+            }
+            
+            # 2. Generar imagen optimizada para Admin solo si hay admins conectados
+            admin_b64 = None
+            has_admin = any(c["client_type"] == "admin" for c in active_connections)
+            if has_admin:
+                # Reducir a 400x400
+                admin_img = cv2.resize(image_bgr, (400, 400))
+                # Comprimir a 40% JPEG
+                _, admin_buffer = cv2.imencode('.jpg', admin_img, [int(cv2.IMWRITE_JPEG_QUALITY), 40])
+                admin_b64 = base64.b64encode(admin_buffer).decode('utf-8')
+
+            # 3. Distribuir a los clientes
+            tasks = []
+            for client in active_connections:
+                ws = client["ws"]
+                c_type = client["client_type"]
+                
+                if c_type == "admin":
+                    admin_payload = dict(payload_data)
+                    if admin_b64:
+                        admin_payload["image"] = admin_b64
+                    tasks.append(ws.send_text(json.dumps(admin_payload)))
+                else:
+                    # Kiosk no recibe imagen, solo data
+                    tasks.append(ws.send_text(json.dumps(payload_data)))
+
+            if tasks:
+                await asyncio.gather(*tasks, return_exceptions=True)
 
     except WebSocketDisconnect:
         # Cliente se desconectó
-        print("Cliente desconectado")
+        if client_info in active_connections:
+            active_connections.remove(client_info)
+        print(f"Cliente {client_type} desconectado")

@@ -1,0 +1,489 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Admin Dashboard - EPP Monitor</title>
+  
+  <!-- Chart.js -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  
+  <style>
+    /* Tema Dark Industrial */
+    :root {
+      --bg-color: #0f172a;
+      --card-bg: rgba(30, 41, 59, 0.7);
+      --text-main: #f8fafc;
+      --text-muted: #94a3b8;
+      --accent: #3b82f6;
+      --success: #10b981;
+      --danger: #ef4444;
+      --border: rgba(255, 255, 255, 0.1);
+    }
+    
+    body {
+      margin: 0;
+      padding: 20px;
+      font-family: 'Inter', system-ui, -apple-system, sans-serif;
+      background-color: var(--bg-color);
+      color: var(--text-main);
+      min-height: 100vh;
+    }
+
+    .dashboard-container {
+      max-width: 1400px;
+      margin: 0 auto;
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+    }
+
+    /* Glassmorphism Cards */
+    .glass-card {
+      background: var(--card-bg);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 20px;
+      box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+    }
+
+    /* Header */
+    .header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 15px;
+    }
+    
+    .header h1 {
+      margin: 0;
+      font-size: 1.5rem;
+      font-weight: 600;
+      letter-spacing: -0.025em;
+    }
+
+    .date-filter {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+    }
+
+    .date-filter input {
+      background: rgba(15, 23, 42, 0.8);
+      border: 1px solid var(--border);
+      color: var(--text-main);
+      padding: 8px 12px;
+      border-radius: 6px;
+      font-family: inherit;
+      outline: none;
+    }
+
+    /* Value Cards (Fila Superior) */
+    .stats-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 20px;
+    }
+
+    .stat-card {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .stat-title {
+      color: var(--text-muted);
+      font-size: 0.875rem;
+      font-weight: 500;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+
+    .stat-value {
+      font-size: 2rem;
+      font-weight: 700;
+    }
+
+    .stat-value.success { color: var(--success); }
+    .stat-value.danger { color: var(--danger); }
+
+    /* Fila Central */
+    .middle-row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 20px;
+    }
+
+    @media (max-width: 900px) {
+      .middle-row { grid-template-columns: 1fr; }
+    }
+
+    /* Video Stream (Izquierda) */
+    .video-wrapper {
+      display: flex;
+      flex-direction: column;
+      gap: 15px;
+    }
+
+    .video-container {
+      position: relative;
+      width: 100%;
+      aspect-ratio: 4/3;
+      background: #000;
+      border-radius: 8px;
+      overflow: hidden;
+      border: 1px solid var(--border);
+    }
+
+    .video-container img, .video-container canvas {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+    }
+
+    .controls {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+
+    .controls button {
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid var(--border);
+      color: var(--text-main);
+      padding: 8px 16px;
+      border-radius: 6px;
+      cursor: pointer;
+      font-weight: 500;
+      transition: all 0.2s;
+    }
+
+    .controls button:hover {
+      background: rgba(255, 255, 255, 0.1);
+    }
+
+    .status-text {
+      font-size: 0.875rem;
+      color: var(--text-muted);
+    }
+
+    /* Chart Container (Derecha) */
+    .chart-wrapper {
+      display: flex;
+      flex-direction: column;
+    }
+
+    .chart-container {
+      position: relative;
+      flex: 1;
+      min-height: 0;
+      height: 100%;
+    }
+
+    /* Fila Inferior (Tabla) */
+    .table-container {
+      overflow-x: auto;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      text-align: left;
+    }
+
+    th {
+      color: var(--text-muted);
+      font-size: 0.875rem;
+      font-weight: 500;
+      padding: 12px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    td {
+      padding: 12px;
+      border-bottom: 1px solid rgba(255,255,255,0.05);
+      font-size: 0.875rem;
+    }
+
+    .badge {
+      padding: 4px 8px;
+      border-radius: 9999px;
+      font-size: 0.75rem;
+      font-weight: 600;
+    }
+    
+    .badge.pass { background: rgba(16, 185, 129, 0.2); color: var(--success); }
+    .badge.denied { background: rgba(239, 68, 68, 0.2); color: var(--danger); }
+  </style>
+</head>
+<body>
+  <div class="dashboard-container">
+    
+    <!-- HEADER -->
+    <header class="header">
+      <h1>Dashboard Monitor EPP</h1>
+      <div class="date-filter">
+        <span style="color: var(--text-muted); font-size: 0.875rem;">Filtro Semanal:</span>
+        <input type="date" value="2023-10-01" id="fechaInicio">
+        <span>-</span>
+        <input type="date" value="2023-10-07" id="fechaFin">
+      </div>
+    </header>
+
+    <!-- FILA SUPERIOR: Value Cards -->
+    <div class="stats-grid">
+      <div class="glass-card stat-card">
+        <span class="stat-title">Total Intentos</span>
+        <span class="stat-value" id="val-total">1,250</span>
+      </div>
+      <div class="glass-card stat-card">
+        <span class="stat-title">Cumplimiento Global</span>
+        <span class="stat-value" id="val-cumplimiento">85%</span>
+      </div>
+      <div class="glass-card stat-card">
+        <span class="stat-title">Aprobados</span>
+        <span class="stat-value success" id="val-pass">1,062</span>
+      </div>
+      <div class="glass-card stat-card">
+        <span class="stat-title">Denegados</span>
+        <span class="stat-value danger" id="val-denied">188</span>
+      </div>
+    </div>
+
+    <!-- FILA CENTRAL -->
+    <div class="middle-row">
+      <!-- Columna Izquierda: Video Stream -->
+      <div class="glass-card video-wrapper">
+        <div class="header" style="margin-bottom: 10px;">
+          <h2 style="font-size: 1rem; margin: 0;">Transmisión en Vivo (Kiosk)</h2>
+          <span class="status-text" id="statusText">Desconectado</span>
+        </div>
+        
+        <div class="video-container">
+          <img id="video" />
+          <canvas id="overlay"></canvas>
+        </div>
+
+        <div class="controls">
+          <button onclick="connectWS()">1. Conectar Servidor</button>
+          <button onclick="startRemoteKiosk()">2. Iniciar Kiosk</button>
+          <button onclick="stopRemoteKiosk()">3. Pausar Transmisión</button>
+        </div>
+      </div>
+
+      <!-- Columna Derecha: Gráfica -->
+      <div class="glass-card chart-wrapper">
+        <h2 style="font-size: 1rem; margin: 0 0 15px 0;">Tendencia Semanal de Accesos</h2>
+        <div class="chart-container">
+          <canvas id="trendChart"></canvas>
+        </div>
+      </div>
+    </div>
+
+    <!-- FILA INFERIOR: Tabla de Logs -->
+    <div class="glass-card">
+      <h2 style="font-size: 1rem; margin: 0 0 15px 0;">Logs de Acceso Recientes</h2>
+      <div class="table-container">
+        <table>
+          <thead>
+            <tr>
+              <th>ID LOG</th>
+              <th>HORA</th>
+              <th>RESULTADO</th>
+              <th>EPP DETECTADO</th>
+            </tr>
+          </thead>
+          <tbody id="logsTableBody">
+            <!-- Los datos se inyectarán por JS -->
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+  </div>
+
+  <script>
+    // ==========================================
+    // 1. ESTADO PARA SUPABASE (MOCKUP)
+    // ==========================================
+    // Este objeto mantiene la estructura requerida para futura conexión a BD
+    const dashboardState = {
+      filtros: {
+        fechaInicio: "2023-10-01",
+        fechaFin: "2023-10-07"
+      },
+      metricas: {
+        totalIntentos: 1250,
+        cumplimiento: 85,
+        aprobados: 1062,
+        denegados: 188
+      },
+      logsRecientes: [
+        { id: "LOG-1250", hora: "08:30 AM", resultado: "DENIED", epp: "Ninguno" },
+        { id: "LOG-1249", hora: "08:22 AM", resultado: "PASS", epp: "Casco, Chaleco" },
+        { id: "LOG-1248", hora: "08:17 AM", resultado: "DENIED", epp: "Solo Casco" },
+        { id: "LOG-1247", hora: "08:15 AM", resultado: "PASS", epp: "Casco, Chaleco" },
+        { id: "LOG-1246", hora: "08:10 AM", resultado: "PASS", epp: "Casco, Chaleco" }
+      ]
+    };
+
+    // ==========================================
+    // 2. RENDERIZADO INICIAL (MOCK DATA)
+    // ==========================================
+    
+    // Configurar Chart.js
+    const ctxChart = document.getElementById('trendChart').getContext('2d');
+    new Chart(ctxChart, {
+      type: 'line',
+      data: {
+        labels: ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo'],
+        datasets: [{
+          label: 'Aprobados (PASS)',
+          data: [120, 150, 140, 180, 190, 80, 202],
+          borderColor: '#10b981',
+          tension: 0.4,
+          fill: true,
+          backgroundColor: 'rgba(16, 185, 129, 0.1)'
+        }, {
+          label: 'Denegados (DENIED)',
+          data: [30, 25, 40, 20, 15, 10, 48],
+          borderColor: '#ef4444',
+          tension: 0.4,
+          fill: true,
+          backgroundColor: 'rgba(239, 68, 68, 0.1)'
+        }]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: { 
+          legend: { labels: { color: '#f8fafc' } } 
+        },
+        scales: {
+          y: { grid: { color: 'rgba(255,255,255,0.05)' }, ticks: { color: '#94a3b8' } },
+          x: { grid: { color: 'rgba(255,255,255,0.05)' }, ticks: { color: '#94a3b8' } }
+        }
+      }
+    });
+
+    // Cargar Tabla de Logs
+    const tbody = document.getElementById('logsTableBody');
+    dashboardState.logsRecientes.forEach(log => {
+      const tr = document.createElement('tr');
+      const badgeClass = log.resultado === 'PASS' ? 'pass' : 'denied';
+      tr.innerHTML = `
+        <td style="color: var(--text-muted)">${log.id}</td>
+        <td>${log.hora}</td>
+        <td><span class="badge ${badgeClass}">${log.resultado}</span></td>
+        <td style="color: var(--text-muted)">${log.epp}</td>
+      `;
+      tbody.appendChild(tr);
+    });
+
+    // ==========================================
+    // 3. LÓGICA DE WEBSOCKET Y VIDEO EN VIVO
+    // ==========================================
+    const video = document.getElementById("video");
+    const overlay = document.getElementById("overlay");
+    const ctx = overlay.getContext("2d");
+    const statusText = document.getElementById("statusText");
+    
+    let ws = null;
+    const MODEL_INPUT_W = 800;
+    const MODEL_INPUT_H = 800;
+
+    function connectWS() {
+      const protocol = location.protocol === "https:" ? "wss" : "ws";
+      ws = new WebSocket(`${protocol}://${location.host}/ws?client_type=admin`);
+
+      ws.onopen = () => {
+        statusText.textContent = "Conectado. Esperando Iniciar Kiosk...";
+        statusText.style.color = "var(--success)";
+        overlay.width = MODEL_INPUT_W;
+        overlay.height = MODEL_INPUT_H;
+      };
+
+      ws.onmessage = (event) => {
+        let data;
+        try {
+            data = JSON.parse(event.data);
+        } catch (e) {
+            return;
+        }
+
+        if (data.error) {
+          statusText.textContent = data.error;
+          statusText.style.color = "var(--danger)";
+          return;
+        }
+
+        if (data.action) return;
+
+        // Renderizar Video Optimizado (400x400 estirado por CSS)
+        if (data.image) {
+          video.src = "data:image/jpeg;base64," + data.image;
+        }
+
+        if (data.status) {
+          statusText.textContent = `Streaming... (${data.status})`;
+        }
+
+        drawBoxes(data.detections || []);
+      };
+
+      ws.onclose = () => {
+        statusText.textContent = "Desconectado";
+        statusText.style.color = "var(--danger)";
+      };
+    }
+
+    function drawBoxes(detections) {
+      ctx.clearRect(0, 0, overlay.width, overlay.height);
+      const scaleX = overlay.width / MODEL_INPUT_W;
+      const scaleY = overlay.height / MODEL_INPUT_H;
+
+      detections.forEach(det => {
+        if (!det.box || det.box.length < 4) return;
+        let [x1, y1, x2, y2] = det.box;
+        x1 *= scaleX; x2 *= scaleX; y1 *= scaleY; y2 *= scaleY;
+        const boxW = x2 - x1, boxH = y2 - y1;
+
+        ctx.lineWidth = 4;
+        if (det.label === "HARDHAT" || det.label === "VEST") {
+          ctx.strokeStyle = "rgba(16, 185, 129, 0.8)";
+          ctx.fillStyle = "rgba(16, 185, 129, 0.8)";
+        } else {
+          ctx.strokeStyle = "rgba(239, 68, 68, 0.8)";
+          ctx.fillStyle = "rgba(239, 68, 68, 0.8)";
+        }
+
+        ctx.strokeRect(x1, y1, boxW, boxH);
+        ctx.font = "bold 18px Inter";
+        const text = `${det.label} ${(det.score ?? 0).toFixed(2)}`;
+        ctx.fillText(text, x1, y1 > 25 ? y1 - 8 : y1 + 24);
+      });
+    }
+
+    function startRemoteKiosk() {
+      if (!ws || ws.readyState !== WebSocket.OPEN) {
+        alert("Primero conecta al Servidor"); return;
+      }
+      ws.send(JSON.stringify({ action: "start_kiosk" }));
+    }
+
+    function stopRemoteKiosk() {
+      if (!ws || ws.readyState !== WebSocket.OPEN) return;
+      ws.send(JSON.stringify({ action: "stop_kiosk" }));
+      ctx.clearRect(0, 0, overlay.width, overlay.height);
+      video.src = "";
+      statusText.textContent = "Kiosk Pausado";
+    }
+  </script>
+</body>
+</html>
