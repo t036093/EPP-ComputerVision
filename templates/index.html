@@ -1,69 +1,101 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="es">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Kiosk View - EPP Detection</title>
+    <title>Kiosk View - EPP Monitor</title>
+    
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
     <style>
         body, html {
             margin: 0;
             padding: 0;
             width: 100vw;
             height: 100vh;
-            background-color: #000;
+            background-color: #0f172a; /* slate-900 */
             overflow: hidden;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
-            color: #fff;
-            box-sizing: border-box;
-            transition: box-shadow 0.3s ease;
+            font-family: 'Inter', system-ui, -apple-system, sans-serif;
+            color: #f8fafc;
+            transition: box-shadow 0.5s ease-out;
         }
 
-        #standby-screen {
-            position: absolute;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-size: 3rem;
-            letter-spacing: 2px;
-            background-color: #000;
-            z-index: 10;
-        }
-
-        canvas {
+        /* Video Canvas - Pantalla Completa Mantenida */
+        #video-canvas {
             width: 100vw;
             height: 100vh;
-            object-fit: contain;
+            object-fit: cover;
+            display: none;
+            /* Invertir horizontalmente para efecto espejo natural */
+            transform: scaleX(-1);
+        }
+
+        /* Viñeta sutil para enmarcar la cámara */
+        .vignette-overlay {
+            position: absolute;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: radial-gradient(circle, transparent 50%, rgba(15, 23, 42, 0.8) 120%);
+            pointer-events: none;
+            z-index: 5;
             display: none;
         }
 
+        /* Efectos Visuales de Decisión (Flashes) usando Box Shadow Inset */
         body.flash-denied {
-            box-shadow: inset 0 0 0 30px #ff0000;
+            box-shadow: inset 0 0 0 20px rgba(239, 68, 68, 0.8), inset 0 0 100px 20px rgba(239, 68, 68, 0.5); /* Red 500 */
         }
         body.flash-pass {
-            box-shadow: inset 0 0 0 30px #00ff00;
+            box-shadow: inset 0 0 0 20px rgba(16, 185, 129, 0.8), inset 0 0 100px 20px rgba(16, 185, 129, 0.5); /* Emerald 500 */
+        }
+
+        /* Animación de Pulso para ícono RFID */
+        @keyframes subtle-pulse {
+            0% { opacity: 0.5; transform: scale(0.95); }
+            50% { opacity: 1; transform: scale(1.05); }
+            100% { opacity: 0.5; transform: scale(0.95); }
+        }
+        .animate-subtle-pulse {
+            animation: subtle-pulse 3s cubic-bezier(0.4, 0, 0.6, 1) infinite;
         }
     </style>
 </head>
-<body>
+<body class="relative flex items-center justify-center">
 
-    <div id="standby-screen">System Standby</div>
-    
-    <!-- Banner de Evaluación -->
-    <div id="evaluation-banner" style="display:none; position:absolute; top:40px; left:50%; transform:translateX(-50%); background:rgba(59,130,246,0.9); padding:15px 40px; border-radius:15px; font-size:2rem; font-weight:bold; color:white; z-index:20; box-shadow:0 10px 25px rgba(0,0,0,0.5);">
-        EVALUANDO ACCESO...
+    <!-- Standby Screen (Lock Screen) -->
+    <div id="standby-screen" class="absolute inset-0 flex flex-col items-center justify-center bg-slate-900 z-10 transition-opacity duration-500">
+        
+        <!-- Animated RFID Icon -->
+        <div class="mb-8 text-blue-500 animate-subtle-pulse">
+            <svg class="w-32 h-32 opacity-80" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M12 4v1m6 11h2m-6 0h-2v4m0-11v3m0 0h.01M12 12h4.01M16 20h4M4 12h4m12 0h.01M5 8h2a1 1 0 001-1V5a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1zm14 0h2a1 1 0 001-1V5a1 1 0 00-1-1h-2a1 1 0 00-1 1v2a1 1 0 001 1zM5 20h2a1 1 0 001-1v-2a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1z"></path>
+            </svg>
+        </div>
+
+        <h1 class="text-4xl md:text-5xl font-bold tracking-tight text-slate-100 mb-3 text-center">Terminal Lista</h1>
+        <p class="text-xl md:text-2xl text-slate-400 font-light text-center max-w-md px-4">Por favor, acerque su gafete RFID al lector para comenzar.</p>
+        
+        <!-- Pequeño indicador de estado inferior -->
+        <div class="absolute bottom-8 flex items-center gap-2">
+            <span class="relative flex h-3 w-3">
+              <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+              <span class="relative inline-flex rounded-full h-3 w-3 bg-emerald-500"></span>
+            </span>
+            <span class="text-sm font-medium tracking-wider text-slate-500 uppercase">Sistema en Línea</span>
+        </div>
     </div>
     
-    <!-- Visible canvas -->
-    <canvas id="video-canvas" width="800" height="800"></canvas>
+    <!-- Banner de Evaluación (HUD Style) -->
+    <div id="evaluation-banner" class="hidden absolute top-12 left-1/2 transform -translate-x-1/2 bg-slate-900/80 backdrop-blur-md border border-blue-500/50 px-8 py-4 rounded-2xl shadow-[0_0_30px_rgba(59,130,246,0.3)] z-20 flex flex-col items-center gap-1 transition-all">
+        <span class="text-sm font-bold text-blue-400 uppercase tracking-widest animate-pulse">Ráfaga de Análisis Activa</span>
+        <span id="eval-target-user" class="text-2xl md:text-3xl font-bold text-white whitespace-nowrap">Usuario...</span>
+    </div>
     
-    <!-- Hidden elements -->
+    <!-- Visible elements -->
+    <canvas id="video-canvas" width="800" height="800"></canvas>
+    <div id="vignette" class="vignette-overlay"></div>
+    
+    <!-- Hidden elements for processing -->
     <video id="webcam" autoplay playsinline style="display:none;"></video>
     <canvas id="hidden-canvas" width="800" height="800" style="display:none;"></canvas>
 
@@ -74,6 +106,7 @@
         const hiddenCtx = hiddenCanvas.getContext('2d');
         const video = document.getElementById('webcam');
         const standbyScreen = document.getElementById('standby-screen');
+        const vignette = document.getElementById('vignette');
         
         let localStream = null;
         let animationFrameId = null;
@@ -104,11 +137,14 @@
                 
                 // Actualizar banner de evaluación
                 const banner = document.getElementById('evaluation-banner');
+                const targetUserSpan = document.getElementById('eval-target-user');
                 if (data.evaluation_active) {
-                    banner.style.display = 'block';
-                    banner.innerText = `RÁFAGA RFID: ${data.target_user}`;
+                    banner.classList.remove('hidden');
+                    banner.classList.add('flex');
+                    targetUserSpan.innerText = data.target_user || 'Desconocido';
                 } else {
-                    banner.style.display = 'none';
+                    banner.classList.add('hidden');
+                    banner.classList.remove('flex');
                 }
                 
                 // Actualizar las detecciones
@@ -121,8 +157,13 @@
         async function startKiosk() {
             if (localStream) {
                 // Si la cámara ya está activa, solo reanudamos la transmisión
-                standbyScreen.style.display = 'none';
-                canvas.style.display = 'block';
+                standbyScreen.style.opacity = '0';
+                setTimeout(() => {
+                    standbyScreen.style.display = 'none';
+                    canvas.style.display = 'block';
+                    vignette.style.display = 'block';
+                }, 500); // Dar tiempo a que termine el fade-out
+                
                 lastServerImage = null;
                 if (!animationFrameId) sendFrame();
                 return;
@@ -135,8 +176,15 @@
                 video.srcObject = localStream;
                 video.onloadedmetadata = () => {
                     video.play();
-                    standbyScreen.style.display = 'none';
-                    canvas.style.display = 'block';
+                    
+                    // Animación suave de transición
+                    standbyScreen.style.opacity = '0';
+                    setTimeout(() => {
+                        standbyScreen.style.display = 'none';
+                        canvas.style.display = 'block';
+                        vignette.style.display = 'block';
+                    }, 500);
+
                     lastServerImage = null;
                     if (!animationFrameId) renderLoop();
                 };
@@ -152,7 +200,9 @@
                 animationFrameId = null;
             }
             canvas.style.display = 'none';
+            vignette.style.display = 'none';
             standbyScreen.style.display = 'flex';
+            setTimeout(() => { standbyScreen.style.opacity = '1'; }, 50);
         }
 
         let lastSendTime = 0;
@@ -162,10 +212,15 @@
             if (!localStream) return;
 
             // Display raw video frame to user at 60 FPS for a smooth mirror effect
+            // Como usamos scaleX(-1) en CSS, necesitamos voltear el contexto de dibujo para que no quede al revés
+            ctx.save();
+            ctx.translate(800, 0);
+            ctx.scale(-1, 1);
             ctx.drawImage(video, 0, 0, 800, 800);
-
-            // Dibujar las bounding boxes sobre el video
+            
+            // Dibujar las bounding boxes sobre el video (dentro del contexto invertido)
             drawBoxes(latestDetections);
+            ctx.restore();
 
             // Solo enviamos si han pasado 100ms Y el servidor ya terminó de procesar la anterior
             const now = Date.now();
@@ -200,19 +255,33 @@
                 let [x1, y1, x2, y2] = det.box;
                 const boxW = x2 - x1, boxH = y2 - y1;
 
-                ctx.lineWidth = 4;
+                ctx.lineWidth = 5;
                 if (det.label === "HARDHAT" || det.label === "VEST") {
-                    ctx.strokeStyle = "rgba(16, 185, 129, 0.9)";
+                    ctx.strokeStyle = "rgba(16, 185, 129, 0.9)"; // Emerald
                     ctx.fillStyle = "rgba(16, 185, 129, 0.9)";
                 } else {
-                    ctx.strokeStyle = "rgba(239, 68, 68, 0.9)";
+                    ctx.strokeStyle = "rgba(239, 68, 68, 0.9)"; // Red
                     ctx.fillStyle = "rgba(239, 68, 68, 0.9)";
                 }
 
+                // Esquinas redondeadas personalizadas simuladas
                 ctx.strokeRect(x1, y1, boxW, boxH);
-                ctx.font = "bold 20px sans-serif";
+                
+                ctx.font = "bold 22px Inter, sans-serif";
                 const text = `${det.label} ${(det.score ?? 0).toFixed(2)}`;
-                ctx.fillText(text, x1, y1 > 25 ? y1 - 8 : y1 + 24);
+                
+                // Fondo oscuro para el texto para mayor legibilidad
+                const textWidth = ctx.measureText(text).width;
+                ctx.fillStyle = "rgba(0,0,0,0.6)";
+                ctx.fillRect(x1, y1 > 35 ? y1 - 30 : y1, textWidth + 10, 30);
+                
+                // Texto de la clase
+                if (det.label === "HARDHAT" || det.label === "VEST") {
+                    ctx.fillStyle = "rgba(16, 185, 129, 1)";
+                } else {
+                    ctx.fillStyle = "rgba(239, 68, 68, 1)";
+                }
+                ctx.fillText(text, x1 + 5, y1 > 35 ? y1 - 8 : y1 + 22);
             });
         }
     </script>

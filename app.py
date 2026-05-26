@@ -5,7 +5,7 @@
 # WebSocket: permite comunicación en tiempo real con el frontend
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 # Para servir archivos (HTML, JS, etc.)
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
 # ONNX Runtime: ejecuta el modelo de IA
 import onnxruntime as ort
@@ -37,6 +37,8 @@ stats_global = {
 # Variables de Estado Global (Sincronización Endpoint - WebSocket)
 evaluation_active = False
 current_attempt = 0
+pass_votes = 0
+denied_votes = 0
 target_user_id = None
 target_full_name = None
 evaluation_result = None
@@ -209,6 +211,63 @@ def get_dashboard_data():
         return {"error": str(e), "metrics": None, "logs": [], "trend": None}
 
 # ==============================
+# ANALYTICS ENDPOINTS
+# ==============================
+@app.get("/analytics", response_class=HTMLResponse)
+def analytics_view():
+    return FileResponse("templates/analytics.html")
+
+@app.get("/api/analytics/users")
+def get_analytics_users():
+    if not SUPABASE_URL or not SUPABASE_KEY:
+        return []
+    try:
+        endpoint = f"{SUPABASE_URL}/rest/v1/users?select=id,full_name,risk_classification&order=full_name.asc"
+        req = urllib.request.Request(endpoint, method="GET")
+        req.add_header("apikey", SUPABASE_KEY)
+        req.add_header("Authorization", f"Bearer {SUPABASE_KEY}")
+        with urllib.request.urlopen(req) as response:
+            return json.loads(response.read().decode("utf-8"))
+    except Exception as e:
+        print("Error fetching users:", e)
+        return []
+
+@app.get("/api/analytics/data")
+def get_analytics_data(start_date: str = None, end_date: str = None, user_id: str = None, status: str = None, risk: str = None):
+    if not SUPABASE_URL or not SUPABASE_KEY:
+        return {"error": "Supabase no configurado"}
+        
+    try:
+        # Check if we need to filter by risk (requires inner join to discard non-matching users)
+        if risk and risk != "ALL":
+            query = f"select=id,timestamp,status,missing_hardhat,missing_vest,users!inner(id,full_name,risk_classification)&users.risk_classification=eq.{risk}&order=timestamp.desc&limit=1000"
+        else:
+            # Default left join to include logs with missing or anonymous users
+            query = "select=id,timestamp,status,missing_hardhat,missing_vest,users(id,full_name,risk_classification)&order=timestamp.desc&limit=1000"
+        
+        if start_date:
+            query += f"&timestamp=gte.{start_date}T00:00:00"
+        if end_date:
+            query += f"&timestamp=lte.{end_date}T23:59:59"
+        if user_id and user_id != "ALL":
+            query += f"&user_id=eq.{user_id}"
+        if status and status != "ALL":
+            query += f"&status=eq.{status}"
+            
+        endpoint = f"{SUPABASE_URL}/rest/v1/access_logs?{query}"
+        req = urllib.request.Request(endpoint, method="GET")
+        req.add_header("apikey", SUPABASE_KEY)
+        req.add_header("Authorization", f"Bearer {SUPABASE_KEY}")
+        
+        with urllib.request.urlopen(req) as response:
+            data = json.loads(response.read().decode("utf-8"))
+            return data
+            
+    except Exception as e:
+        print("Error fetching analytics data:", e)
+        return {"error": str(e)}
+
+# ==============================
 # BASE DE DATOS HELPER
 # ==============================
 def insert_access_log(user_id, status, missing_hardhat, missing_vest):
@@ -237,7 +296,7 @@ def insert_access_log(user_id, status, missing_hardhat, missing_vest):
 @app.get("/api/v1/scan")
 async def scan_nfc(credential_id: str):
     """Filter 1: Escaneo NFC y Activación de la Ráfaga"""
-    global evaluation_active, current_attempt, target_user_id, target_full_name, evaluation_result, evaluation_event
+    global evaluation_active, current_attempt, pass_votes, denied_votes, target_user_id, target_full_name, evaluation_result, evaluation_event
     
     if not SUPABASE_URL or not SUPABASE_KEY:
         return {"status": "error", "reason": "Supabase no configurado"}
@@ -271,6 +330,8 @@ async def scan_nfc(credential_id: str):
     target_user_id = user_data[0]["id"]
     target_full_name = user_data[0]["full_name"]
     current_attempt = 0
+    pass_votes = 0
+    denied_votes = 0
     evaluation_result = None
     evaluation_event.clear()
     
@@ -473,7 +534,7 @@ async def shutdown_event():
 
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket, client_type: str = "kiosk"):
-    global evaluation_active, current_attempt, target_user_id, target_full_name, evaluation_result, evaluation_event
+    global evaluation_active, current_attempt, pass_votes, denied_votes, target_user_id, target_full_name, evaluation_result, evaluation_event
     
     # Acepta conexión del cliente
     await websocket.accept()
@@ -536,11 +597,20 @@ async def websocket_endpoint(websocket: WebSocket, client_type: str = "kiosk"):
                     missing_hardhat = "HARDHAT" not in labels
                     missing_vest = "VEST" not in labels
                     
-                    # Condición de éxito (Cualquiera es PASS) o fin de ráfaga (10 frames)
-                    if status == "PASS" or current_attempt >= 10:
-                        final_status = "PASS" if status == "PASS" else "DENIED"
+                    if status == "PASS":
+                        pass_votes += 1
+                    else:
+                        denied_votes += 1
+                    
+                    # Condición de éxito: Evaluamos al final de la ráfaga (10 frames)
+                    if current_attempt >= 10:
+                        # IMPORTANTE: Desactivar inmediatamente para evitar duplicados por concurrencia
+                        evaluation_active = False
                         
-                        # 1. Insertar BD
+                        # Decisión final: Threshold de 3 pases positivos en la ráfaga
+                        final_status = "PASS" if pass_votes >= 3 else "DENIED"
+                        
+                        # 1. Insertar BD (Una sola vez)
                         asyncio.create_task(asyncio.to_thread(insert_access_log, target_user_id, final_status, missing_hardhat, missing_vest))
                         
                         # 2. Señal Arduino
@@ -553,7 +623,6 @@ async def websocket_endpoint(websocket: WebSocket, client_type: str = "kiosk"):
                         else:
                             evaluation_result = {"status": "denied", "reason": "Missing PPE"}
                             
-                        evaluation_active = False
                         evaluation_event.set()
 
             except Exception as e:
