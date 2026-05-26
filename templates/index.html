@@ -83,12 +83,12 @@
     </div>
     
     <!-- Visible elements -->
-    <canvas id="video-canvas" width="800" height="800"></canvas>
+    <canvas id="video-canvas" width="640" height="640"></canvas>
     <div id="vignette" class="vignette-overlay"></div>
     
     <!-- Hidden elements for processing -->
     <video id="webcam" autoplay playsinline style="display:none;"></video>
-    <canvas id="hidden-canvas" width="800" height="800" style="display:none;"></canvas>
+    <canvas id="hidden-canvas" width="640" height="640" style="display:none;"></canvas>
 
     <script>
         const canvas = document.getElementById('video-canvas');
@@ -178,7 +178,7 @@
 
             try {
                 localStream = await navigator.mediaDevices.getUserMedia({
-                    video: { width: 800, height: 800, facingMode: "user" }
+                    video: { width: 640, height: 640, facingMode: "user" }
                 });
                 video.srcObject = localStream;
                 video.onloadedmetadata = () => {
@@ -218,9 +218,9 @@
             // Display raw video frame to user at 60 FPS for a smooth mirror effect
             // Como usamos scaleX(-1) en CSS, necesitamos voltear el contexto de dibujo para que no quede al revés
             ctx.save();
-            ctx.translate(800, 0);
+            ctx.translate(640, 0);
             ctx.scale(-1, 1);
-            ctx.drawImage(video, 0, 0, 800, 800);
+            ctx.drawImage(video, 0, 0, 640, 640);
             
             // Dibujar las bounding boxes sobre el video (dentro del contexto invertido)
             drawBoxes(latestDetections);
@@ -232,7 +232,7 @@
                 lastSendTime = now;
                 isWaitingForServer = true; // Bloqueamos envíos hasta recibir respuesta
                 
-                hiddenCtx.drawImage(video, 0, 0, 800, 800);
+                hiddenCtx.drawImage(video, 0, 0, 640, 640);
                 if (socket.readyState === WebSocket.OPEN) {
                     const dataUrl = hiddenCanvas.toDataURL('image/jpeg', 0.6);
                     const base64 = dataUrl.split(',')[1];

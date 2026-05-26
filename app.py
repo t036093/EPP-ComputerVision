@@ -387,8 +387,8 @@ def run_model(image_bgr):
     # Normaliza valores [0,255] → [0,1]
     img = img / 255.0
 
-    # Redimensiona a 800x800 (input esperado por el modelo)
-    img = cv2.resize(img, (800, 800))
+    # Redimensiona a 640x640 (input esperado por el nuevo modelo)
+    img = cv2.resize(img, (640, 640))
 
     # Cambia formato HWC → CHW (canales primero)
     img = np.transpose(img, (2, 0, 1))
@@ -435,12 +435,12 @@ def parse_model_output(outputs, conf_threshold=0.75):
     # Transpone → (13125, 29)
     raw = raw.T
 
-    # Mapeo de clases del modelo
+    # Mapeo de clases del modelo nuevo (4 clases)
     class_map = {
-        2: "HARDHAT",
-        5: "NO_HARDHAT",
-        7: "NO_VEST",
-        11: "VEST"
+        0: "HARDHAT",
+        1: "NO_HARDHAT",
+        2: "NO_VEST",
+        3: "VEST"
     }
 
     # Guarda solo la mejor detección por etiqueta
