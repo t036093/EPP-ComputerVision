@@ -416,26 +416,20 @@ def run_model(image_bgr):
 # ==============================
 # POSTPROCESAMIENTO (DETECCIONES)
 # ==============================
-def parse_model_output(outputs, conf_threshold=0.75):
+def parse_model_output(outputs, conf_threshold=0.20, nms_threshold=0.45):
     """
     Convierte la salida cruda del modelo en detecciones legibles:
-    bounding boxes + clase + score
+    Usa Non-Maximum Suppression (NMS) para evitar duplicados y elige solo 1 cabeza y 1 torso.
     """
-
-    raw = outputs[0]  # Ejemplo: (1, 29, 13125)
+    raw = outputs[0]
     detections = []
 
-    # Validación de tipo
     if not isinstance(raw, np.ndarray):
         return detections
 
-    # Quita batch → (29, 13125)
-    raw = np.squeeze(raw, axis=0)
+    raw = np.squeeze(raw, axis=0)   # (8, 8400)
+    raw = raw.T                     # (8400, 8)
 
-    # Transpone → (13125, 29)
-    raw = raw.T
-
-    # Mapeo de clases del modelo nuevo (4 clases)
     class_map = {
         0: "HARDHAT",
         1: "NO_HARDHAT",
@@ -443,35 +437,32 @@ def parse_model_output(outputs, conf_threshold=0.75):
         3: "VEST"
     }
 
-    # Guarda solo la mejor detección por etiqueta
-    best_by_label = {}
+    candidates = []
+    boxes_for_nms = []
+    scores_for_nms = []
 
     for row in raw:
-        # Coordenadas del bounding box (centro + tamaño)
         cx, cy, w, h = row[:4]
-
-        # Probabilidades por clase
         class_scores = row[4:]
 
-        # Clase con mayor probabilidad
         class_id = int(np.argmax(class_scores))
         score = float(class_scores[class_id])
 
-        # Filtrado por confianza
         if score < conf_threshold:
             continue
 
-        # Solo clases relevantes
         if class_id not in class_map:
             continue
 
-        # Convertir a formato esquina (x1,y1,x2,y2)
+        label = class_map[class_id]
+
         x1 = int(cx - (w / 2))
         y1 = int(cy - (h / 2))
         x2 = int(cx + (w / 2))
         y2 = int(cy + (h / 2))
 
-        label = class_map[class_id]
+        box_w = max(0, x2 - x1)
+        box_h = max(0, y2 - y1)
 
         det = {
             "label": label,
@@ -479,16 +470,46 @@ def parse_model_output(outputs, conf_threshold=0.75):
             "box": [x1, y1, x2, y2]
         }
 
-        # Mantener solo la mejor detección por clase
-        if label not in best_by_label or score > best_by_label[label]["score"]:
-            best_by_label[label] = det
+        candidates.append(det)
+        boxes_for_nms.append([x1, y1, box_w, box_h])
+        scores_for_nms.append(score)
 
-    detections = list(best_by_label.values())
+    if not candidates:
+        return []
 
-    print("=== DETECTIONS PARSEADAS ===")
-    print(detections)
+    indices = cv2.dnn.NMSBoxes(
+        boxes_for_nms,
+        scores_for_nms,
+        conf_threshold,
+        nms_threshold
+    )
 
-    return detections
+    filtered = []
+    if len(indices) > 0:
+        for i in indices.flatten():
+            filtered.append(candidates[i])
+
+    best_head = None
+    best_torso = None
+
+    for det in filtered:
+        label = det["label"]
+
+        if label in ["HARDHAT", "NO_HARDHAT"]:
+            if best_head is None or det["score"] > best_head["score"]:
+                best_head = det
+
+        elif label in ["VEST", "NO_VEST"]:
+            if best_torso is None or det["score"] > best_torso["score"]:
+                best_torso = det
+
+    final_detections = []
+    if best_head is not None:
+        final_detections.append(best_head)
+    if best_torso is not None:
+        final_detections.append(best_torso)
+
+    return final_detections
 
 
 # ==============================
