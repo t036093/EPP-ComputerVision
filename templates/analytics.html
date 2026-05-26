@@ -1,0 +1,414 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Analítica Avanzada - EPP Monitor</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Chart.js -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        body { background-color: #0f172a; } /* Slate 900 */
+        .glass { background: rgba(30, 41, 59, 0.7); backdrop-filter: blur(12px); border: 1px solid rgba(255, 255, 255, 0.1); }
+    </style>
+</head>
+<body class="text-slate-100 font-sans min-h-screen pb-10">
+
+    <!-- Header -->
+    <nav class="bg-slate-800 shadow-md mb-6 border-b border-slate-700">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="flex justify-between h-16 items-center">
+                <div class="flex items-center gap-3">
+                    <svg class="w-8 h-8 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"></path></svg>
+                    <h1 class="text-2xl font-bold text-slate-100">Analítica Avanzada EPP</h1>
+                </div>
+                <a href="/admin" class="text-sm font-medium text-blue-400 hover:text-blue-300 transition">Volver al Admin View</a>
+            </div>
+        </div>
+    </nav>
+
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        
+        <!-- Filter Bar -->
+        <div class="glass rounded-xl shadow-sm p-5 mb-8">
+            <h2 class="text-sm font-bold text-slate-400 uppercase tracking-wider mb-4">Filtros de Búsqueda</h2>
+            <div class="grid grid-cols-1 md:grid-cols-5 gap-4 items-end">
+                
+                <div>
+                    <label class="block text-sm font-medium text-slate-400 mb-1">Fecha Inicio</label>
+                    <input type="date" id="filter-start" class="w-full rounded-md border-slate-600 bg-slate-800 text-slate-200 shadow-sm focus:border-blue-500 focus:ring-blue-500 px-3 py-2 border outline-none">
+                </div>
+                
+                <div>
+                    <label class="block text-sm font-medium text-slate-400 mb-1">Fecha Fin</label>
+                    <input type="date" id="filter-end" class="w-full rounded-md border-slate-600 bg-slate-800 text-slate-200 shadow-sm focus:border-blue-500 focus:ring-blue-500 px-3 py-2 border outline-none">
+                </div>
+
+                <div>
+                    <label class="block text-sm font-medium text-slate-400 mb-1">Usuario</label>
+                    <select id="filter-user" class="w-full rounded-md border-slate-600 bg-slate-800 text-slate-200 shadow-sm focus:border-blue-500 focus:ring-blue-500 px-3 py-2 border outline-none">
+                        <option value="ALL">Todos los Usuarios</option>
+                    </select>
+                </div>
+
+                <div>
+                    <label class="block text-sm font-medium text-slate-400 mb-1">Resultado</label>
+                    <select id="filter-status" class="w-full rounded-md border-slate-600 bg-slate-800 text-slate-200 shadow-sm focus:border-blue-500 focus:ring-blue-500 px-3 py-2 border outline-none">
+                        <option value="ALL">Todos</option>
+                        <option value="PASS">Aprobados (PASS)</option>
+                        <option value="DENIED">Denegados (DENIED)</option>
+                    </select>
+                </div>
+
+                <div>
+                    <label class="block text-sm font-medium text-slate-400 mb-1">Nivel de Riesgo</label>
+                    <select id="filter-risk" class="w-full rounded-md border-slate-600 bg-slate-800 text-slate-200 shadow-sm focus:border-blue-500 focus:ring-blue-500 px-3 py-2 border outline-none">
+                        <option value="ALL">Cualquier Riesgo</option>
+                        <option value="Low">Bajo (Low)</option>
+                        <option value="Medium">Medio (Medium)</option>
+                        <option value="High">Alto (High)</option>
+                    </select>
+                </div>
+
+            </div>
+        </div>
+
+        <!-- KPI Cards -->
+        <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8" id="kpi-container">
+            <div class="glass rounded-xl shadow-sm p-5 text-center">
+                <p class="text-sm font-bold text-slate-400 uppercase">Total Registros</p>
+                <p class="text-3xl font-bold text-slate-100 mt-2" id="kpi-total">0</p>
+            </div>
+            <div class="glass rounded-xl shadow-sm p-5 text-center border-b-4 border-emerald-500">
+                <p class="text-sm font-bold text-slate-400 uppercase">Aprobados</p>
+                <p class="text-3xl font-bold text-emerald-400 mt-2" id="kpi-pass">0</p>
+            </div>
+            <div class="glass rounded-xl shadow-sm p-5 text-center border-b-4 border-red-500">
+                <p class="text-sm font-bold text-slate-400 uppercase">Denegados</p>
+                <p class="text-3xl font-bold text-red-400 mt-2" id="kpi-denied">0</p>
+            </div>
+            <div class="glass rounded-xl shadow-sm p-5 text-center">
+                <p class="text-sm font-bold text-slate-400 uppercase">Cumplimiento</p>
+                <p class="text-3xl font-bold text-blue-400 mt-2" id="kpi-percent">0%</p>
+            </div>
+        </div>
+
+        <!-- Charts -->
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-8 mb-8">
+            <!-- Donut Chart -->
+            <div class="glass rounded-xl shadow-sm p-5">
+                <h3 class="text-lg font-bold text-slate-100 mb-4 text-center">Desglose de Fallas (EPP Faltante)</h3>
+                <div class="relative h-64 w-full">
+                    <canvas id="donutChart"></canvas>
+                </div>
+            </div>
+
+            <!-- Bar Chart -->
+            <div class="glass rounded-xl shadow-sm p-5">
+                <h3 class="text-lg font-bold text-slate-100 mb-4 text-center">Top Usuarios Denegados</h3>
+                <div class="relative h-64 w-full">
+                    <canvas id="barChart"></canvas>
+                </div>
+            </div>
+        </div>
+
+        <!-- Data Table -->
+        <div class="glass rounded-xl shadow-sm overflow-hidden">
+            <div class="px-5 py-4 border-b border-slate-700 flex justify-between items-center bg-slate-800/50">
+                <h3 class="text-lg font-bold text-slate-100">Detalle de Accesos</h3>
+                <div class="text-sm text-slate-400" id="pagination-info">Mostrando 0 registros</div>
+            </div>
+            <div class="overflow-x-auto">
+                <table class="w-full text-left border-collapse">
+                    <thead>
+                        <tr class="bg-slate-800/80 text-slate-400 text-xs uppercase tracking-wider">
+                            <th class="px-5 py-3 font-medium">ID / Fecha</th>
+                            <th class="px-5 py-3 font-medium">Usuario</th>
+                            <th class="px-5 py-3 font-medium">Riesgo</th>
+                            <th class="px-5 py-3 font-medium">Estado</th>
+                            <th class="px-5 py-3 font-medium">Detalle (Falta)</th>
+                        </tr>
+                    </thead>
+                    <tbody id="table-body" class="divide-y divide-slate-700 bg-transparent">
+                        <!-- JS Injects Here -->
+                    </tbody>
+                </table>
+            </div>
+            <div class="px-5 py-3 border-t border-slate-700 bg-slate-800/50 flex justify-between items-center">
+                <button id="btn-prev" class="px-4 py-2 border border-slate-600 rounded-md text-sm font-medium bg-slate-700 text-slate-200 hover:bg-slate-600 disabled:opacity-50">Anterior</button>
+                <span id="page-indicator" class="text-sm text-slate-400">Página 1</span>
+                <button id="btn-next" class="px-4 py-2 border border-slate-600 rounded-md text-sm font-medium bg-slate-700 text-slate-200 hover:bg-slate-600 disabled:opacity-50">Siguiente</button>
+            </div>
+        </div>
+
+    </div>
+
+    <script>
+        // --- State ---
+        let rawData = [];
+        let donutChartInst = null;
+        let barChartInst = null;
+        
+        let currentPage = 1;
+        const rowsPerPage = 10;
+
+        // --- Initialization ---
+        document.addEventListener("DOMContentLoaded", async () => {
+            // Set Default Dates (Last 7 Days)
+            const end = new Date();
+            const start = new Date();
+            start.setDate(end.getDate() - 7);
+            
+            document.getElementById("filter-start").value = start.toISOString().split('T')[0];
+            document.getElementById("filter-end").value = end.toISOString().split('T')[0];
+
+            // Load Users Dropdown
+            await loadUsers();
+
+            // Setup Event Listeners
+            const filters = ["filter-start", "filter-end", "filter-user", "filter-status", "filter-risk"];
+            filters.forEach(id => {
+                document.getElementById(id).addEventListener("change", fetchData);
+            });
+
+            // Pagination Listeners
+            document.getElementById("btn-prev").addEventListener("click", () => {
+                if (currentPage > 1) { currentPage--; renderTable(); }
+            });
+            document.getElementById("btn-next").addEventListener("click", () => {
+                if ((currentPage * rowsPerPage) < rawData.length) { currentPage++; renderTable(); }
+            });
+
+            // Initial Fetch
+            fetchData();
+        });
+
+        // --- Fetch Dropdown Data ---
+        async function loadUsers() {
+            try {
+                const res = await fetch("/api/analytics/users");
+                const users = await res.json();
+                const select = document.getElementById("filter-user");
+                users.forEach(u => {
+                    const opt = document.createElement("option");
+                    opt.value = u.id;
+                    opt.textContent = u.full_name;
+                    select.appendChild(opt);
+                });
+            } catch (e) {
+                console.error("Error loading users", e);
+            }
+        }
+
+        // --- Fetch Analytics Data ---
+        async function fetchData() {
+            const start = document.getElementById("filter-start").value;
+            const end = document.getElementById("filter-end").value;
+            const user = document.getElementById("filter-user").value;
+            const status = document.getElementById("filter-status").value;
+            const risk = document.getElementById("filter-risk").value;
+
+            // Bloquear Inputs visualmente
+            document.getElementById("table-body").innerHTML = `<tr><td colspan="5" class="px-5 py-8 text-center text-slate-400">Cargando datos...</td></tr>`;
+
+            const params = new URLSearchParams();
+            if (start) params.append("start_date", start);
+            if (end) params.append("end_date", end);
+            if (user !== "ALL") params.append("user_id", user);
+            if (status !== "ALL") params.append("status", status);
+            if (risk !== "ALL") params.append("risk", risk);
+
+            try {
+                const res = await fetch(`/api/analytics/data?${params.toString()}`);
+                const data = await res.json();
+                
+                if (data.error) {
+                    alert("Error consultando datos: " + data.error);
+                    return;
+                }
+
+                rawData = data || [];
+                currentPage = 1;
+                
+                updateKPIs();
+                updateCharts();
+                renderTable();
+
+            } catch (e) {
+                console.error("Error fetching data", e);
+            }
+        }
+
+        // --- Update KPIs ---
+        function updateKPIs() {
+            const total = rawData.length;
+            const pass = rawData.filter(d => d.status === "PASS").length;
+            const denied = total - pass;
+            const pct = total > 0 ? Math.round((pass / total) * 100) : 0;
+
+            document.getElementById("kpi-total").textContent = total;
+            document.getElementById("kpi-pass").textContent = pass;
+            document.getElementById("kpi-denied").textContent = denied;
+            document.getElementById("kpi-percent").textContent = pct + "%";
+        }
+
+        // --- Render Table ---
+        function renderTable() {
+            const tbody = document.getElementById("table-body");
+            tbody.innerHTML = "";
+
+            const startIndex = (currentPage - 1) * rowsPerPage;
+            const endIndex = startIndex + rowsPerPage;
+            const slice = rawData.slice(startIndex, endIndex);
+
+            if (rawData.length === 0) {
+                tbody.innerHTML = `<tr><td colspan="5" class="px-5 py-8 text-center text-slate-500">No se encontraron registros para estos filtros.</td></tr>`;
+            }
+
+            slice.forEach(row => {
+                const tr = document.createElement("tr");
+                tr.className = "hover:bg-slate-50 transition";
+
+                // Date format
+                const d = new Date(row.timestamp);
+                const dateStr = d.toLocaleDateString() + " " + d.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
+                const shortId = row.id.split('-')[0];
+
+                // Badges
+                const badgeStatus = row.status === "PASS" 
+                    ? `<span class="px-2 py-1 bg-emerald-900/50 text-emerald-400 text-xs font-bold rounded-full border border-emerald-500/30">PASS</span>`
+                    : `<span class="px-2 py-1 bg-red-900/50 text-red-400 text-xs font-bold rounded-full border border-red-500/30">DENIED</span>`;
+                
+                const riskVal = row.users?.risk_classification || "N/A";
+                let riskClass = "bg-slate-700 text-slate-300";
+                if (riskVal === "High" || riskVal === "Alto") riskClass = "bg-orange-900/50 text-orange-400 border border-orange-500/30";
+                if (riskVal === "Low" || riskVal === "Bajo") riskClass = "bg-blue-900/50 text-blue-400 border border-blue-500/30";
+                const badgeRisk = `<span class="px-2 py-1 ${riskClass} text-xs font-bold rounded-md">${riskVal}</span>`;
+
+                // EPP details
+                let epp = "Ok";
+                if (row.status === "DENIED") {
+                    let missing = [];
+                    if (row.missing_hardhat) missing.push("Casco");
+                    if (row.missing_vest) missing.push("Chaleco");
+                    epp = missing.join(" y ");
+                }
+
+                const user = row.users?.full_name || "Desconocido";
+
+                tr.innerHTML = `
+                    <td class="px-5 py-3 text-sm text-slate-300">
+                        <div class="font-mono text-xs text-slate-500">LOG-${shortId}</div>
+                        <div>${dateStr}</div>
+                    </td>
+                    <td class="px-5 py-3 text-sm font-semibold text-slate-200">${user}</td>
+                    <td class="px-5 py-3">${badgeRisk}</td>
+                    <td class="px-5 py-3">${badgeStatus}</td>
+                    <td class="px-5 py-3 text-sm text-slate-400">${epp}</td>
+                `;
+                tbody.appendChild(tr);
+            });
+
+            // Update Pagination UI
+            const totalPages = Math.ceil(rawData.length / rowsPerPage) || 1;
+            document.getElementById("page-indicator").textContent = `Página ${currentPage} de ${totalPages}`;
+            document.getElementById("pagination-info").textContent = `Mostrando ${rawData.length > 0 ? startIndex + 1 : 0} a ${Math.min(endIndex, rawData.length)} de ${rawData.length} registros`;
+            
+            document.getElementById("btn-prev").disabled = currentPage === 1;
+            document.getElementById("btn-next").disabled = currentPage === totalPages;
+        }
+
+        // --- Render Charts ---
+        function updateCharts() {
+            // 1. Donut Chart (Missing Breakdown)
+            let onlyHardhat = 0;
+            let onlyVest = 0;
+            let both = 0;
+
+            const deniedLogs = rawData.filter(d => d.status === "DENIED");
+            deniedLogs.forEach(d => {
+                if (d.missing_hardhat && d.missing_vest) both++;
+                else if (d.missing_hardhat) onlyHardhat++;
+                else if (d.missing_vest) onlyVest++;
+            });
+
+            const donutCtx = document.getElementById("donutChart").getContext("2d");
+            if (donutChartInst) donutChartInst.destroy();
+            
+            if (deniedLogs.length === 0) {
+                // Empty state donut
+                donutChartInst = new Chart(donutCtx, {
+                    type: 'doughnut',
+                    data: { labels: ['Sin Fallas'], datasets: [{ data: [1], backgroundColor: ['#e2e8f0'] }] },
+                    options: { responsive: true, maintainAspectRatio: false, plugins: { tooltip: {enabled: false} } }
+                });
+            } else {
+                donutChartInst = new Chart(donutCtx, {
+                    type: 'doughnut',
+                    data: {
+                        labels: ['Solo Casco Faltante', 'Solo Chaleco Faltante', 'Ambos Faltantes'],
+                        datasets: [{
+                            data: [onlyHardhat, onlyVest, both],
+                            backgroundColor: ['#f59e0b', '#3b82f6', '#ef4444'],
+                            borderWidth: 0,
+                            hoverOffset: 4
+                        }]
+                    },
+                    options: {
+                        color: '#f1f5f9',
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        cutout: '70%',
+                        plugins: {
+                            legend: { position: 'bottom', labels: { usePointStyle: true, boxWidth: 8, color: '#f1f5f9' } }
+                        }
+                    }
+                });
+            }
+
+            // 2. Bar Chart (Top Denied Users)
+            const userCounts = {};
+            deniedLogs.forEach(d => {
+                const name = d.users?.full_name || "Desconocido";
+                userCounts[name] = (userCounts[name] || 0) + 1;
+            });
+
+            // Sort and take Top 5
+            const sortedUsers = Object.entries(userCounts).sort((a, b) => b[1] - a[1]).slice(0, 5);
+            const barLabels = sortedUsers.map(u => u[0]);
+            const barData = sortedUsers.map(u => u[1]);
+
+            const barCtx = document.getElementById("barChart").getContext("2d");
+            if (barChartInst) barChartInst.destroy();
+
+            barChartInst = new Chart(barCtx, {
+                type: 'bar',
+                data: {
+                    labels: barLabels,
+                    datasets: [{
+                        label: 'Intentos Denegados',
+                        data: barData,
+                        backgroundColor: '#ef4444',
+                        borderRadius: 4
+                    }]
+                },
+                options: {
+                    indexAxis: 'y', // Horizontal
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    color: '#f1f5f9',
+                    scales: {
+                        x: { beginAtZero: true, grid: { color: 'rgba(255,255,255,0.05)' }, ticks: { color: '#94a3b8' } },
+                        y: { grid: { display: false }, ticks: { color: '#94a3b8' } }
+                    },
+                    plugins: {
+                        legend: { display: false }
+                    }
+                }
+            });
+        }
+
+    </script>
+</body>
+</html>

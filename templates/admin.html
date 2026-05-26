@@ -5,139 +5,27 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>Admin Dashboard - EPP Monitor</title>
   
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
   <!-- Chart.js -->
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
   
   <style>
-    /* Tema Dark Industrial */
-    :root {
-      --bg-color: #0f172a;
-      --card-bg: rgba(30, 41, 59, 0.7);
-      --text-main: #f8fafc;
-      --text-muted: #94a3b8;
-      --accent: #3b82f6;
-      --success: #10b981;
-      --danger: #ef4444;
-      --border: rgba(255, 255, 255, 0.1);
+    body { background-color: #0f172a; } /* Slate 900 */
+    .glass-card { 
+      background: rgba(30, 41, 59, 0.7); 
+      backdrop-filter: blur(12px); 
+      border: 1px solid rgba(255, 255, 255, 0.1); 
     }
     
-    body {
-      margin: 0;
-      padding: 15px;
-      font-family: 'Inter', system-ui, -apple-system, sans-serif;
-      background-color: var(--bg-color);
-      color: var(--text-main);
-      min-height: 100vh;
-    }
-
-    .dashboard-container {
-      max-width: 1100px;
-      margin: 0 auto;
-      display: flex;
-      flex-direction: column;
-      gap: 15px;
-    }
-
-    /* Glassmorphism Cards */
-    .glass-card {
-      background: var(--card-bg);
-      backdrop-filter: blur(12px);
-      -webkit-backdrop-filter: blur(12px);
-      border: 1px solid var(--border);
-      border-radius: 8px;
-      padding: 15px;
-      box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
-    }
-
-    /* Header */
-    .header {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      flex-wrap: wrap;
-      gap: 15px;
-    }
-    
-    .header h1 {
-      margin: 0;
-      font-size: 1.25rem;
-      font-weight: 600;
-      letter-spacing: -0.025em;
-    }
-
-    .date-filter {
-      display: flex;
-      gap: 10px;
-      align-items: center;
-    }
-
-    .date-filter input {
-      background: rgba(15, 23, 42, 0.8);
-      border: 1px solid var(--border);
-      color: var(--text-main);
-      padding: 8px 12px;
-      border-radius: 6px;
-      font-family: inherit;
-      outline: none;
-    }
-
-    /* Value Cards (Fila Superior) */
-    .stats-grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-      gap: 15px;
-    }
-
-    .stat-card {
-      display: flex;
-      flex-direction: column;
-      gap: 5px;
-    }
-
-    .stat-title {
-      color: var(--text-muted);
-      font-size: 0.75rem;
-      font-weight: 500;
-      text-transform: uppercase;
-      letter-spacing: 0.05em;
-    }
-
-    .stat-value {
-      font-size: 1.6rem;
-      font-weight: 700;
-    }
-
-    .stat-value.success { color: var(--success); }
-    .stat-value.danger { color: var(--danger); }
-
-    /* Fila Central */
-    .middle-row {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 15px;
-    }
-
-    @media (max-width: 900px) {
-      .middle-row { grid-template-columns: 1fr; }
-    }
-
-    /* Video Stream (Izquierda) */
-    .video-wrapper {
-      display: flex;
-      flex-direction: column;
-      gap: 10px;
-    }
-
+    /* Overlay and Video Canvas styles to ensure proper stretching */
     .video-container {
       position: relative;
       width: 100%;
       aspect-ratio: 4/3;
       background: #000;
-      border-radius: 8px;
       overflow: hidden;
-      border: 1px solid var(--border);
     }
-
     .video-container img, .video-container canvas {
       position: absolute;
       top: 0;
@@ -146,167 +34,106 @@
       height: 100%;
       object-fit: contain;
     }
-
-    .controls {
-      display: flex;
-      gap: 10px;
-      flex-wrap: wrap;
-    }
-
-    .controls button {
-      background: rgba(255, 255, 255, 0.05);
-      border: 1px solid var(--border);
-      color: var(--text-main);
-      padding: 6px 12px;
-      font-size: 0.85rem;
-      border-radius: 6px;
-      cursor: pointer;
-      font-weight: 500;
-      transition: all 0.2s;
-    }
-
-    .controls button:hover {
-      background: rgba(255, 255, 255, 0.1);
-    }
-
-    .status-text {
-      font-size: 0.8rem;
-      color: var(--text-muted);
-    }
-
-    /* Chart Container (Derecha) */
-    .chart-wrapper {
-      display: flex;
-      flex-direction: column;
-    }
-
-    .chart-container {
-      position: relative;
-      flex: 1;
-      min-height: 0;
-      height: 100%;
-    }
-
-    /* Fila Inferior (Tabla) */
-    .table-container {
-      overflow-x: auto;
-    }
-
-    table {
-      width: 100%;
-      border-collapse: collapse;
-      text-align: left;
-    }
-
-    th {
-      color: var(--text-muted);
-      font-size: 0.75rem;
-      font-weight: 600;
-      padding: 8px 12px;
-      border-bottom: 1px solid var(--border);
-    }
-
-    td {
-      padding: 8px 12px;
-      border-bottom: 1px solid rgba(255,255,255,0.05);
-      font-size: 0.8rem;
-    }
-
-    .badge {
-      padding: 4px 8px;
-      border-radius: 9999px;
-      font-size: 0.75rem;
-      font-weight: 600;
-    }
-    
-    .badge.pass { background: rgba(16, 185, 129, 0.2); color: var(--success); }
-    .badge.denied { background: rgba(239, 68, 68, 0.2); color: var(--danger); }
   </style>
 </head>
-<body>
-  <div class="dashboard-container">
-    
-    <!-- HEADER -->
-    <header class="header">
-      <h1>Dashboard Monitor EPP</h1>
-      <div class="date-filter">
-        <span style="color: var(--text-muted); font-size: 0.875rem;">Filtro Semanal:</span>
-        <input type="date" value="2023-10-01" id="fechaInicio">
-        <span>-</span>
-        <input type="date" value="2023-10-07" id="fechaFin">
-      </div>
-    </header>
+<body class="text-slate-100 font-sans min-h-screen pb-10">
 
-    <!-- FILA SUPERIOR: Value Cards -->
-    <div class="stats-grid">
-      <div class="glass-card stat-card">
-        <span class="stat-title">Total Intentos</span>
-        <span class="stat-value" id="val-total">1,250</span>
+  <!-- Header / Nav -->
+  <nav class="bg-slate-800 shadow-md mb-6 border-b border-slate-700">
+      <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div class="flex justify-between h-16 items-center flex-wrap gap-4 py-2">
+              <div class="flex items-center gap-3">
+                  <svg class="w-8 h-8 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"></path></svg>
+                  <h1 class="text-2xl font-bold text-slate-100">Dashboard Monitor EPP</h1>
+              </div>
+              <div class="flex items-center gap-4 flex-wrap">
+                  <a href="/analytics" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-bold rounded-lg shadow-lg transition">Analítica Avanzada &rarr;</a>
+                  <div class="flex items-center gap-2">
+                      <span class="text-sm text-slate-400">Filtro:</span>
+                      <input type="date" value="2023-10-01" id="fechaInicio" class="bg-slate-800 border border-slate-600 text-slate-200 text-sm rounded-md px-2 py-1 outline-none focus:border-blue-500">
+                      <span class="text-slate-500">-</span>
+                      <input type="date" value="2023-10-07" id="fechaFin" class="bg-slate-800 border border-slate-600 text-slate-200 text-sm rounded-md px-2 py-1 outline-none focus:border-blue-500">
+                  </div>
+              </div>
+          </div>
       </div>
-      <div class="glass-card stat-card">
-        <span class="stat-title">Cumplimiento Global</span>
-        <span class="stat-value" id="val-cumplimiento">85%</span>
+  </nav>
+
+  <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 space-y-6">
+    
+    <!-- Stats Row -->
+    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div class="glass-card rounded-xl p-5 flex flex-col gap-1">
+        <span class="text-xs font-bold text-slate-400 uppercase tracking-wide">Total Intentos</span>
+        <span class="text-3xl font-bold text-slate-100" id="val-total">0</span>
       </div>
-      <div class="glass-card stat-card">
-        <span class="stat-title">Aprobados</span>
-        <span class="stat-value success" id="val-pass">1,062</span>
+      <div class="glass-card rounded-xl p-5 flex flex-col gap-1">
+        <span class="text-xs font-bold text-slate-400 uppercase tracking-wide">Cumplimiento Global</span>
+        <span class="text-3xl font-bold text-blue-400" id="val-cumplimiento">0%</span>
       </div>
-      <div class="glass-card stat-card">
-        <span class="stat-title">Denegados</span>
-        <span class="stat-value danger" id="val-denied">188</span>
+      <div class="glass-card rounded-xl p-5 flex flex-col gap-1 border-b-4 border-emerald-500">
+        <span class="text-xs font-bold text-slate-400 uppercase tracking-wide">Aprobados</span>
+        <span class="text-3xl font-bold text-emerald-400" id="val-pass">0</span>
+      </div>
+      <div class="glass-card rounded-xl p-5 flex flex-col gap-1 border-b-4 border-red-500">
+        <span class="text-xs font-bold text-slate-400 uppercase tracking-wide">Denegados</span>
+        <span class="text-3xl font-bold text-red-400" id="val-denied">0</span>
       </div>
     </div>
 
-    <!-- FILA CENTRAL -->
-    <div class="middle-row">
-      <!-- Columna Izquierda: Video Stream -->
-      <div class="glass-card video-wrapper">
-        <div class="header" style="margin-bottom: 10px;">
-          <h2 style="font-size: 1rem; margin: 0;">Transmisión en Vivo (Kiosk)</h2>
-          <span class="status-text" id="statusText">Desconectado</span>
+    <!-- Middle Row: Video & Chart -->
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      
+      <!-- Video Stream (Izquierda) -->
+      <div class="glass-card rounded-xl p-5 flex flex-col gap-4">
+        <div class="flex justify-between items-center border-b border-slate-700 pb-3">
+          <h2 class="text-lg font-bold text-slate-100">Transmisión en Vivo (Kiosk)</h2>
+          <span class="text-sm font-medium text-slate-400" id="statusText">Desconectado</span>
         </div>
         
-        <div class="video-container">
+        <div class="video-container rounded-lg border border-slate-700 relative">
           <!-- Banner de Ráfaga Activa -->
-          <div id="admin-eval-banner" style="display:none; position:absolute; top:20px; left:50%; transform:translateX(-50%); background:rgba(59,130,246,0.9); padding:10px 25px; border-radius:10px; font-size:1.2rem; font-weight:bold; color:white; z-index:10; box-shadow:0 5px 15px rgba(0,0,0,0.5); white-space:nowrap;">
+          <div id="admin-eval-banner" class="hidden absolute top-4 left-1/2 transform -translate-x-1/2 bg-blue-600/90 px-6 py-2 rounded-full text-lg font-bold text-white z-10 shadow-xl whitespace-nowrap border border-blue-400/50 backdrop-blur-sm">
             RÁFAGA RFID ACTIVA
           </div>
           <img id="video" />
           <canvas id="overlay"></canvas>
         </div>
 
-        <div class="controls">
-          <button onclick="connectWS()">1. Conectar Servidor</button>
-          <button onclick="startRemoteKiosk()">2. Iniciar Kiosk</button>
-          <button onclick="stopRemoteKiosk()">3. Pausar Transmisión</button>
+        <div class="flex flex-wrap gap-2 pt-2">
+          <button onclick="connectWS()" class="px-4 py-2 bg-slate-700 hover:bg-slate-600 border border-slate-600 text-slate-200 text-sm font-medium rounded-lg transition">1. Conectar Servidor</button>
+          <button onclick="startRemoteKiosk()" class="px-4 py-2 bg-slate-700 hover:bg-slate-600 border border-slate-600 text-slate-200 text-sm font-medium rounded-lg transition">2. Iniciar Kiosk</button>
+          <button onclick="stopRemoteKiosk()" class="px-4 py-2 bg-red-900/40 hover:bg-red-800/60 border border-red-500/30 text-red-400 text-sm font-medium rounded-lg transition">3. Pausar Transmisión</button>
         </div>
       </div>
 
-      <!-- Columna Derecha: Gráfica -->
-      <div class="glass-card chart-wrapper">
-        <h2 style="font-size: 1rem; margin: 0 0 15px 0;">Tendencia Semanal de Accesos</h2>
-        <div class="chart-container">
+      <!-- Chart (Derecha) -->
+      <div class="glass-card rounded-xl p-5 flex flex-col">
+        <h2 class="text-lg font-bold text-slate-100 mb-4 border-b border-slate-700 pb-3">Tendencia Semanal de Accesos</h2>
+        <div class="relative flex-1 min-h-[300px]">
           <canvas id="trendChart"></canvas>
         </div>
       </div>
+
     </div>
 
-    <!-- FILA INFERIOR: Tabla de Logs -->
-    <div class="glass-card">
-      <h2 style="font-size: 1rem; margin: 0 0 15px 0;">Logs de Acceso Recientes</h2>
-      <div class="table-container">
-        <table>
+    <!-- Bottom Row: Table -->
+    <div class="glass-card rounded-xl overflow-hidden">
+      <div class="px-5 py-4 border-b border-slate-700 bg-slate-800/50">
+        <h2 class="text-lg font-bold text-slate-100">Logs de Acceso Recientes</h2>
+      </div>
+      <div class="overflow-x-auto">
+        <table class="w-full text-left border-collapse">
           <thead>
-            <tr>
-              <th>ID LOG</th>
-              <th>HORA</th>
-              <th>USUARIO</th>
-              <th>RESULTADO</th>
-              <th>EPP DETECTADO</th>
+            <tr class="bg-slate-800/80 text-slate-400 text-xs uppercase tracking-wider">
+              <th class="px-5 py-3 font-medium">ID / Hora</th>
+              <th class="px-5 py-3 font-medium">Usuario</th>
+              <th class="px-5 py-3 font-medium">Resultado</th>
+              <th class="px-5 py-3 font-medium">EPP Detectado</th>
             </tr>
           </thead>
-          <tbody id="logsTableBody">
-            <!-- Los datos se inyectarán por JS -->
+          <tbody id="logsTableBody" class="divide-y divide-slate-700 bg-transparent">
+            <!-- JS Injects Here -->
           </tbody>
         </table>
       </div>
@@ -344,7 +171,11 @@
           
           data.logs.forEach(log => {
             const tr = document.createElement('tr');
-            const badgeClass = log.status === 'PASS' ? 'pass' : 'denied';
+            tr.className = "hover:bg-slate-800/50 transition";
+            
+            const badgePass = `<span class="px-2 py-1 bg-emerald-900/50 text-emerald-400 text-xs font-bold rounded-full border border-emerald-500/30">PASS</span>`;
+            const badgeDenied = `<span class="px-2 py-1 bg-red-900/50 text-red-400 text-xs font-bold rounded-full border border-red-500/30">DENIED</span>`;
+            const badgeClass = log.status === 'PASS' ? badgePass : badgeDenied;
             
             // Determinar qué EPP faltó
             let eppDetectado = "Ok";
@@ -367,11 +198,13 @@
             const userName = log.users ? log.users.full_name : 'Desconocido';
 
             tr.innerHTML = `
-              <td style="color: var(--text-muted)">LOG-${shortId}</td>
-              <td>${horaLocal}</td>
-              <td style="font-weight: 600;">${userName}</td>
-              <td><span class="badge ${badgeClass}">${log.status}</span></td>
-              <td style="color: var(--text-muted)">${eppDetectado}</td>
+              <td class="px-5 py-3 text-sm text-slate-300">
+                <div class="font-mono text-xs text-slate-500">LOG-${shortId}</div>
+                <div>${horaLocal}</div>
+              </td>
+              <td class="px-5 py-3 text-sm font-semibold text-slate-200">${userName}</td>
+              <td class="px-5 py-3">${badgeClass}</td>
+              <td class="px-5 py-3 text-sm text-slate-400">${eppDetectado}</td>
             `;
             tbody.appendChild(tr);
           });
@@ -404,15 +237,15 @@
         labels: ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo'],
         datasets: [{
           label: 'Aprobados (PASS)',
-          data: [120, 150, 140, 180, 190, 80, 202],
-          borderColor: '#10b981',
+          data: [0, 0, 0, 0, 0, 0, 0],
+          borderColor: '#10b981', // emerald-500
           tension: 0.4,
           fill: true,
           backgroundColor: 'rgba(16, 185, 129, 0.1)'
         }, {
           label: 'Denegados (DENIED)',
-          data: [30, 25, 40, 20, 15, 10, 48],
-          borderColor: '#ef4444',
+          data: [0, 0, 0, 0, 0, 0, 0],
+          borderColor: '#ef4444', // red-500
           tension: 0.4,
           fill: true,
           backgroundColor: 'rgba(239, 68, 68, 0.1)'
@@ -421,6 +254,7 @@
       options: {
         responsive: true,
         maintainAspectRatio: false,
+        color: '#f1f5f9', // slate-100
         plugins: { 
           legend: { labels: { color: '#f8fafc' } } 
         },
@@ -449,7 +283,7 @@
 
       ws.onopen = () => {
         statusText.textContent = "Conectado. Esperando Iniciar Kiosk...";
-        statusText.style.color = "var(--success)";
+        statusText.className = "text-sm font-medium text-emerald-400";
         overlay.width = MODEL_INPUT_W;
         overlay.height = MODEL_INPUT_H;
       };
@@ -464,15 +298,11 @@
 
         if (data.error) {
           statusText.textContent = data.error;
-          statusText.style.color = "var(--danger)";
+          statusText.className = "text-sm font-medium text-red-400";
           if (data.image) {
-            document.getElementById("no-kiosk-msg").style.display = "none";
-            const img = document.getElementById("admin-video");
-            img.style.display = "block";
-            img.src = "data:image/jpeg;base64," + data.image;
+            video.style.display = "block";
+            video.src = "data:image/jpeg;base64," + data.image;
           }
-          
-          // Solo procesamos evalBanner si estamos en el payload de exito
           return;
         }
 
@@ -481,13 +311,13 @@
         // Banner de evaluación
         const evalBanner = document.getElementById('admin-eval-banner');
         if (data.evaluation_active) {
-            evalBanner.style.display = 'block';
+            evalBanner.classList.remove('hidden');
             evalBanner.innerText = `[RÁFAGA EN PROGRESO] Evaluando a: ${data.target_user}`;
         } else {
-            evalBanner.style.display = 'none';
+            evalBanner.classList.add('hidden');
         }
 
-        // Renderizar Video Optimizado (400x400 estirado por CSS)
+        // Renderizar Video
         if (data.image) {
           video.src = "data:image/jpeg;base64," + data.image;
         }
@@ -501,7 +331,7 @@
 
       ws.onclose = () => {
         statusText.textContent = "Desconectado";
-        statusText.style.color = "var(--danger)";
+        statusText.className = "text-sm font-medium text-red-400";
       };
     }
 
@@ -518,10 +348,10 @@
 
         ctx.lineWidth = 4;
         if (det.label === "HARDHAT" || det.label === "VEST") {
-          ctx.strokeStyle = "rgba(16, 185, 129, 0.8)";
+          ctx.strokeStyle = "rgba(16, 185, 129, 0.8)"; // emerald-500
           ctx.fillStyle = "rgba(16, 185, 129, 0.8)";
         } else {
-          ctx.strokeStyle = "rgba(239, 68, 68, 0.8)";
+          ctx.strokeStyle = "rgba(239, 68, 68, 0.8)"; // red-500
           ctx.fillStyle = "rgba(239, 68, 68, 0.8)";
         }
 
@@ -545,6 +375,7 @@
       ctx.clearRect(0, 0, overlay.width, overlay.height);
       video.src = "";
       statusText.textContent = "Kiosk Pausado";
+      statusText.className = "text-sm font-medium text-slate-400";
     }
   </script>
 </body>

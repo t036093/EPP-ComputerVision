@@ -62,27 +62,18 @@
 </head>
 <body class="relative flex items-center justify-center">
 
-    <!-- Standby Screen (Lock Screen) -->
-    <div id="standby-screen" class="absolute inset-0 flex flex-col items-center justify-center bg-slate-900 z-10 transition-opacity duration-500">
+    <!-- Dynamic RFID Prompt Popup (Appears when someone is detected) -->
+    <div id="rfid-prompt-popup" class="hidden absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 bg-slate-900/80 backdrop-blur-md border border-slate-600/50 p-8 rounded-3xl shadow-[0_10px_40px_rgba(0,0,0,0.5)] z-10 flex-col items-center justify-center transition-opacity duration-300 w-3/4 max-w-md">
         
         <!-- Animated RFID Icon -->
-        <div class="mb-8 text-blue-500 animate-subtle-pulse">
-            <svg class="w-32 h-32 opacity-80" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <div class="mb-6 text-blue-400 animate-subtle-pulse">
+            <svg class="w-24 h-24 opacity-90 mx-auto" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M12 4v1m6 11h2m-6 0h-2v4m0-11v3m0 0h.01M12 12h4.01M16 20h4M4 12h4m12 0h.01M5 8h2a1 1 0 001-1V5a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1zm14 0h2a1 1 0 001-1V5a1 1 0 00-1-1h-2a1 1 0 00-1 1v2a1 1 0 001 1zM5 20h2a1 1 0 001-1v-2a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1z"></path>
             </svg>
         </div>
 
-        <h1 class="text-4xl md:text-5xl font-bold tracking-tight text-slate-100 mb-3 text-center">Terminal Lista</h1>
-        <p class="text-xl md:text-2xl text-slate-400 font-light text-center max-w-md px-4">Por favor, acerque su gafete RFID al lector para comenzar.</p>
-        
-        <!-- Pequeño indicador de estado inferior -->
-        <div class="absolute bottom-8 flex items-center gap-2">
-            <span class="relative flex h-3 w-3">
-              <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-              <span class="relative inline-flex rounded-full h-3 w-3 bg-emerald-500"></span>
-            </span>
-            <span class="text-sm font-medium tracking-wider text-slate-500 uppercase">Sistema en Línea</span>
-        </div>
+        <h2 class="text-3xl font-bold tracking-tight text-white mb-2 text-center">¡Hola!</h2>
+        <p class="text-lg text-slate-300 font-light text-center">Por favor, escanea tu gafete RFID para identificarte.</p>
     </div>
     
     <!-- Banner de Evaluación (HUD Style) -->
@@ -105,13 +96,14 @@
         const hiddenCanvas = document.getElementById('hidden-canvas');
         const hiddenCtx = hiddenCanvas.getContext('2d');
         const video = document.getElementById('webcam');
-        const standbyScreen = document.getElementById('standby-screen');
+        const rfidPrompt = document.getElementById('rfid-prompt-popup');
         const vignette = document.getElementById('vignette');
         
         let localStream = null;
         let animationFrameId = null;
         let lastServerImage = null;
         let latestDetections = []; // Almacena las bounding boxes recibidas
+        let popupTimeout = null;
 
         const protocol = location.protocol === "https:" ? "wss" : "ws";
         const socket = new WebSocket(`${protocol}://${location.host}/ws?client_type=kiosk`);
@@ -147,9 +139,28 @@
                     banner.classList.remove('flex');
                 }
                 
-                // Actualizar las detecciones
+                // Actualizar las detecciones y mostrar/ocultar el pop-up inteligentemente
                 if (data.detections) {
                     latestDetections = data.detections;
+                    
+                    // Lógica del Pop-up: Mostrar si hay alguien detectado y no hay evaluación activa
+                    if (data.detections.length > 0 && !data.evaluation_active) {
+                        rfidPrompt.classList.remove('hidden');
+                        rfidPrompt.classList.add('flex');
+                        
+                        // Renovar el temporizador para ocultar si la persona se va
+                        if (popupTimeout) clearTimeout(popupTimeout);
+                        popupTimeout = setTimeout(() => {
+                            rfidPrompt.classList.add('hidden');
+                            rfidPrompt.classList.remove('flex');
+                        }, 2000); // Ocultar tras 2 segundos sin detecciones
+                    }
+                }
+                
+                // Si la evaluación arranca, esconder forzosamente el pop-up de prompt
+                if (data.evaluation_active) {
+                    rfidPrompt.classList.add('hidden');
+                    rfidPrompt.classList.remove('flex');
                 }
             }
         };
@@ -157,12 +168,8 @@
         async function startKiosk() {
             if (localStream) {
                 // Si la cámara ya está activa, solo reanudamos la transmisión
-                standbyScreen.style.opacity = '0';
-                setTimeout(() => {
-                    standbyScreen.style.display = 'none';
-                    canvas.style.display = 'block';
-                    vignette.style.display = 'block';
-                }, 500); // Dar tiempo a que termine el fade-out
+                canvas.style.display = 'block';
+                vignette.style.display = 'block';
                 
                 lastServerImage = null;
                 if (!animationFrameId) sendFrame();
@@ -177,13 +184,8 @@
                 video.onloadedmetadata = () => {
                     video.play();
                     
-                    // Animación suave de transición
-                    standbyScreen.style.opacity = '0';
-                    setTimeout(() => {
-                        standbyScreen.style.display = 'none';
-                        canvas.style.display = 'block';
-                        vignette.style.display = 'block';
-                    }, 500);
+                    canvas.style.display = 'block';
+                    vignette.style.display = 'block';
 
                     lastServerImage = null;
                     if (!animationFrameId) renderLoop();
@@ -201,8 +203,10 @@
             }
             canvas.style.display = 'none';
             vignette.style.display = 'none';
-            standbyScreen.style.display = 'flex';
-            setTimeout(() => { standbyScreen.style.opacity = '1'; }, 50);
+            
+            // Ocultar prompts
+            rfidPrompt.classList.add('hidden');
+            rfidPrompt.classList.remove('flex');
         }
 
         let lastSendTime = 0;
