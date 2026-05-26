@@ -91,8 +91,17 @@
           <span class="text-sm font-medium text-slate-400" id="statusText">Desconectado</span>
         </div>
         
-        <div class="video-container rounded-lg border border-slate-700 relative">
-          <!-- Banner de Ráfaga Activa -->
+        <div class="video-container rounded-lg border border-slate-700 relative overflow-hidden">
+          <!-- Final Decision Overlays (Admin Video) -->
+          <div id="admin-decision-pass" class="hidden absolute inset-0 z-50 bg-emerald-600/90 flex-col items-center justify-center text-white backdrop-blur-sm transition-all duration-300">
+              <i class="fas fa-check-circle text-8xl mb-4 shadow-xl rounded-full"></i>
+              <h2 class="text-4xl font-black">ACCESO CONCEDIDO</h2>
+          </div>
+          <div id="admin-decision-denied" class="hidden absolute inset-0 z-50 bg-red-600/90 flex-col items-center justify-center text-white backdrop-blur-sm transition-all duration-300">
+              <i class="fas fa-times-circle text-8xl mb-4 shadow-xl rounded-full"></i>
+              <h2 class="text-4xl font-black">ACCESO DENEGADO</h2>
+          </div>
+          
           <div id="admin-eval-banner" class="hidden absolute top-4 left-1/2 transform -translate-x-1/2 bg-blue-600/90 px-6 py-2 rounded-full text-lg font-bold text-white z-10 shadow-xl whitespace-nowrap border border-blue-400/50 backdrop-blur-sm">
             RÁFAGA RFID ACTIVA
           </div>
@@ -308,6 +317,11 @@
 
         if (data.action) return;
         
+        // Lógica Frontend Visual para Decisión Final
+        if (data.final_decision) {
+            showAdminDecision(data.final_decision);
+        }
+        
         // Banner de evaluación
         const evalBanner = document.getElementById('admin-eval-banner');
         if (data.evaluation_active) {
@@ -360,6 +374,20 @@
         const text = `${det.label} ${(det.score ?? 0).toFixed(2)}`;
         ctx.fillText(text, x1, y1 > 25 ? y1 - 8 : y1 + 24);
       });
+    }
+
+    function showAdminDecision(decision) {
+        const screenId = decision === "PASS" ? "admin-decision-pass" : "admin-decision-denied";
+        const screen = document.getElementById(screenId);
+        if (!screen) return;
+        
+        screen.classList.remove('hidden');
+        screen.classList.add('flex');
+        
+        setTimeout(() => {
+            screen.classList.remove('flex');
+            screen.classList.add('hidden');
+        }, 3000);
     }
 
     function startRemoteKiosk() {

@@ -60,7 +60,20 @@
         }
     </style>
 </head>
-<body class="relative flex items-center justify-center">
+<body class="relative flex items-center justify-center overflow-hidden">
+
+    <!-- Pantallas Gigantes de Decisión -->
+    <div id="decision-pass" class="hidden absolute inset-0 z-50 bg-emerald-600/95 flex flex-col items-center justify-center text-white backdrop-blur-sm transition-all duration-300">
+        <i class="fas fa-check-circle text-9xl mb-6 shadow-2xl rounded-full"></i>
+        <h1 class="text-6xl font-black tracking-tight drop-shadow-lg">ACCESO CONCEDIDO</h1>
+        <p class="text-2xl mt-4 font-medium opacity-90">Equipo de Protección Completo</p>
+    </div>
+
+    <div id="decision-denied" class="hidden absolute inset-0 z-50 bg-red-600/95 flex flex-col items-center justify-center text-white backdrop-blur-sm transition-all duration-300">
+        <i class="fas fa-times-circle text-9xl mb-6 shadow-2xl rounded-full"></i>
+        <h1 class="text-6xl font-black tracking-tight drop-shadow-lg">ACCESO DENEGADO</h1>
+        <p class="text-2xl mt-4 font-medium opacity-90">Falta Equipo de Protección</p>
+    </div>
 
     <!-- Dynamic RFID Prompt Popup (Appears when someone is detected) -->
     <div id="rfid-prompt-popup" class="hidden absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 bg-slate-900/80 backdrop-blur-md border border-slate-600/50 p-8 rounded-3xl shadow-[0_10px_40px_rgba(0,0,0,0.5)] z-10 flex-col items-center justify-center transition-opacity duration-300 w-3/4 max-w-md">
@@ -123,6 +136,12 @@
 
             if (data.action === "start_kiosk") startKiosk();
             else if (data.action === "stop_kiosk") stopKiosk();
+            
+            // Si el backend nos envía una decisión definitiva en este frame, mostramos pantalla completa
+            if (data.final_decision) {
+                showFullscreenDecision(data.final_decision);
+            }
+            
             else if (data.status) {
                 if (data.status === "DENIED") flashBorder("flash-denied");
                 else if (data.status === "PASS") flashBorder("flash-pass");
@@ -196,11 +215,11 @@
         }
 
         function stopKiosk() {
-            // Ya NO apagamos la cámara, solo detenemos el envío de frames
-            if (animationFrameId) {
-                clearTimeout(animationFrameId);
-                animationFrameId = null;
+            if (video.srcObject) {
+                video.srcObject.getTracks().forEach(track => track.stop());
             }
+            cancelAnimationFrame(animationFrameId);
+            ctx.clearRect(0, 0, 640, 640);
             canvas.style.display = 'none';
             vignette.style.display = 'none';
             
@@ -287,6 +306,23 @@
                 }
                 ctx.fillText(text, x1 + 5, y1 > 35 ? y1 - 8 : y1 + 22);
             });
+        }
+        function showFullscreenDecision(decision) {
+            const screenId = decision === "PASS" ? "decision-pass" : "decision-denied";
+            const screen = document.getElementById(screenId);
+            if (!screen) return;
+            
+            screen.classList.remove('hidden');
+            screen.classList.add('flex');
+            
+            setTimeout(() => {
+                screen.classList.remove('flex');
+                screen.classList.add('hidden');
+                
+                if (video && video.paused) {
+                    video.play().catch(e => console.log("Video resume error:", e));
+                }
+            }, 3000);
         }
     </script>
 </body>

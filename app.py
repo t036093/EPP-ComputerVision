@@ -59,9 +59,10 @@ evaluation_event = asyncio.Event()
 #     if arduino:
 #         arduino.write(b"A")
 
-# def mandar_denegado():
 #     if arduino:
 #         arduino.write(b"D")
+
+arduino = None
 
 # ==============================
 # CARGAR VARIABLES DEL .ENV (Sin dependencias externas)
@@ -569,6 +570,8 @@ async def websocket_endpoint(websocket: WebSocket, client_type: str = "kiosk"):
 
     try:
         while True:
+            final_decision_to_send = None
+            
             # Recibe mensaje del frontend
             message = await websocket.receive_text()
             data = json.loads(message)
@@ -634,10 +637,15 @@ async def websocket_endpoint(websocket: WebSocket, client_type: str = "kiosk"):
                         # 1. Insertar BD (Una sola vez)
                         asyncio.create_task(asyncio.to_thread(insert_access_log, target_user_id, final_status, missing_hardhat, missing_vest))
                         
-                        # 2. Señal Arduino
+                        # 2. Señal Arduino (No bloqueante)
                         if final_status == "PASS" and arduino and arduino.is_open:
-                            arduino.write(b"A")
-                            
+                            def send_arduino():
+                                try:
+                                    arduino.write(b"A")
+                                except Exception as e:
+                                    print("Error Arduino:", e)
+                            asyncio.create_task(asyncio.to_thread(send_arduino))
+                        
                         # 3. Preparar resultado y avisar al endpoint HTTP
                         if final_status == "PASS":
                             evaluation_result = {"status": "allowed", "user": target_full_name}
@@ -645,13 +653,14 @@ async def websocket_endpoint(websocket: WebSocket, client_type: str = "kiosk"):
                             evaluation_result = {"status": "denied", "reason": "Missing PPE"}
                             
                         evaluation_event.set()
+                        final_decision_to_send = final_status
 
             except Exception as e:
                 print("ERROR EN INFERENCIA:", e)
                 detections = []
                 status = "ERROR"
 
-            # 1. Payload base para todos
+            # Payload base regular
             payload_data = {
                 "detections": detections,
                 "status": status,
@@ -659,6 +668,9 @@ async def websocket_endpoint(websocket: WebSocket, client_type: str = "kiosk"):
                 "evaluation_active": evaluation_active,
                 "target_user": target_full_name if evaluation_active else None
             }
+            
+            if final_decision_to_send:
+                payload_data["final_decision"] = final_decision_to_send
             
             # 2. Generar imagen optimizada para Admin solo si hay admins conectados
             admin_b64 = None
