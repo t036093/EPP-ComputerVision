@@ -22,6 +22,10 @@ import serial
 import time
 from typing import List
 import asyncio
+import sys
+import os
+import urllib.request
+import urllib.parse
 
 # Variable global para persistir estadísticas durante la sesión
 stats_global = {
@@ -29,6 +33,14 @@ stats_global = {
     "DENIED": 0,
     "TOTAL": 0
 }
+
+# Variables de Estado Global (Sincronización Endpoint - WebSocket)
+evaluation_active = False
+current_attempt = 0
+target_user_id = None
+target_full_name = None
+evaluation_result = None
+evaluation_event = asyncio.Event()
 
 #==============================
 # CONFIGURACIÓN DE ARDUINO
@@ -48,6 +60,38 @@ stats_global = {
 # def mandar_denegado():
 #     if arduino:
 #         arduino.write(b"D")
+
+# ==============================
+# CARGAR VARIABLES DEL .ENV (Sin dependencias externas)
+# ==============================
+env_path = os.path.join(os.path.dirname(__file__), ".env")
+if os.path.exists(env_path):
+    with open(env_path, "r") as f:
+        for line in f:
+            line = line.strip()
+            if line and not line.startswith("#") and "=" in line:
+                key, val = line.split("=", 1)
+                os.environ[key.strip()] = val.strip().strip('"\'')
+    print("✅ Archivo .env cargado exitosamente.")
+
+# ==============================
+# CONFIGURACIÓN DE SUPABASE (REST API DIRECTA)
+# ==============================
+# Usamos HTTP directo (urllib) para evitar dependencias C++ como pyiceberg
+SUPABASE_URL = os.environ.get("SUPABASE_URL", "").strip().rstrip("/")
+SUPABASE_KEY = os.environ.get("SUPABASE_KEY", "").strip()
+
+if SUPABASE_URL and SUPABASE_KEY:
+    print("✅ Supabase REST API URL detectada.")
+    
+    # Diagnóstico Rápido: Las llaves anon/service_role son JWT y deben empezar con 'ey'
+    if not SUPABASE_KEY.startswith("ey"):
+        print("❌ ERROR DE DIAGNÓSTICO: Tu SUPABASE_KEY no parece ser una llave válida.")
+        print("   -> Asegúrate de estar usando la 'anon public key' o la 'service_role key' (Ambas empiezan con 'ey...').")
+    else:
+        print(f"✅ Supabase Key válida (Longitud: {len(SUPABASE_KEY)} caracteres).")
+else:
+    print("⚠️ Supabase NO inicializado. Configura SUPABASE_URL y SUPABASE_KEY en tus variables de entorno o en tu archivo .env.")
 
 # ==============================
 # INICIALIZACIÓN DEL SERVIDOR
@@ -88,6 +132,159 @@ def root():
 def get_admin():
     """Vista completa: Estadísticas y controles de flujo"""
     return FileResponse("templates/admin.html")
+
+# ==============================
+# API DEL DASHBOARD (DATOS EN VIVO)
+# ==============================
+@app.get("/api/dashboard")
+def get_dashboard_data():
+    """Obtiene métricas globales y últimos logs desde Supabase"""
+    if not SUPABASE_URL or not SUPABASE_KEY:
+        return {"error": "Supabase no configurado", "metrics": None, "logs": []}
+    
+    try:
+        # 1. Obtener métricas de la vista
+        endpoint_metrics = f"{SUPABASE_URL}/rest/v1/view_global_metrics?select=*"
+        req_m = urllib.request.Request(endpoint_metrics, method="GET")
+        req_m.add_header("apikey", SUPABASE_KEY)
+        req_m.add_header("Authorization", f"Bearer {SUPABASE_KEY}")
+        
+        metrics = {"total_attempts": 0, "total_passed": 0, "total_denied": 0, "compliance_percentage": 0}
+        with urllib.request.urlopen(req_m) as response:
+            data = json.loads(response.read().decode("utf-8"))
+            if data and len(data) > 0:
+                metrics = data[0]
+                
+        # 2. Obtener los últimos 10 logs de acceso (Haciendo JOIN con la tabla users)
+        endpoint_logs = f"{SUPABASE_URL}/rest/v1/access_logs?select=id,timestamp,status,missing_hardhat,missing_vest,users(full_name)&order=timestamp.desc&limit=10"
+        req_l = urllib.request.Request(endpoint_logs, method="GET")
+        req_l.add_header("apikey", SUPABASE_KEY)
+        req_l.add_header("Authorization", f"Bearer {SUPABASE_KEY}")
+        
+        logs = []
+        with urllib.request.urlopen(req_l) as response:
+            logs = json.loads(response.read().decode("utf-8"))
+            
+        # 3. Obtener tendencia semanal (Últimos 7 días)
+        endpoint_trend = f"{SUPABASE_URL}/rest/v1/access_logs?select=timestamp,status&order=timestamp.desc&limit=1000"
+        req_t = urllib.request.Request(endpoint_trend, method="GET")
+        req_t.add_header("apikey", SUPABASE_KEY)
+        req_t.add_header("Authorization", f"Bearer {SUPABASE_KEY}")
+        
+        trend_data = []
+        with urllib.request.urlopen(req_t) as response:
+            trend_data = json.loads(response.read().decode("utf-8"))
+            
+        import datetime
+        # Supabase guarda en UTC, así que calculamos "hoy" en UTC para que coincida con los strings
+        today = datetime.datetime.now(datetime.timezone.utc).date()
+        last_7_days = [(today - datetime.timedelta(days=i)) for i in range(6, -1, -1)]
+        labels = [d.strftime("%b %d") for d in last_7_days] # Ej. May 26
+        
+        pass_counts = {d: 0 for d in last_7_days}
+        denied_counts = {d: 0 for d in last_7_days}
+        
+        for row in trend_data:
+            try:
+                date_str = row["timestamp"][:10]
+                row_date = datetime.datetime.strptime(date_str, "%Y-%m-%d").date()
+                if row_date in pass_counts:
+                    if row["status"] == "PASS":
+                        pass_counts[row_date] += 1
+                    elif row["status"] == "DENIED":
+                        denied_counts[row_date] += 1
+            except Exception:
+                pass
+                
+        trend = {
+            "labels": labels,
+            "pass": [pass_counts[d] for d in last_7_days],
+            "denied": [denied_counts[d] for d in last_7_days]
+        }
+            
+        return {"metrics": metrics, "logs": logs, "trend": trend}
+        
+    except Exception as e:
+        print(f"Error fetching dashboard data: {e}")
+        return {"error": str(e), "metrics": None, "logs": [], "trend": None}
+
+# ==============================
+# BASE DE DATOS HELPER
+# ==============================
+def insert_access_log(user_id, status, missing_hardhat, missing_vest):
+    if not SUPABASE_URL or not SUPABASE_KEY:
+        return
+    try:
+        endpoint = f"{SUPABASE_URL}/rest/v1/access_logs"
+        log_data = {
+            "user_id": user_id,
+            "status": status,
+            "missing_hardhat": missing_hardhat,
+            "missing_vest": missing_vest
+        }
+        req = urllib.request.Request(endpoint, data=json.dumps(log_data).encode("utf-8"), method="POST")
+        req.add_header("apikey", SUPABASE_KEY)
+        req.add_header("Authorization", f"Bearer {SUPABASE_KEY}")
+        req.add_header("Content-Type", "application/json")
+        req.add_header("Prefer", "return=minimal")
+        urllib.request.urlopen(req, timeout=5)
+    except Exception as e:
+        print("Error insertando en BD:", e)
+
+# ==============================
+# ENDPOINT DE ESCANEO NFC (TRIGGER)
+# ==============================
+@app.get("/api/v1/scan")
+async def scan_nfc(credential_id: str):
+    """Filter 1: Escaneo NFC y Activación de la Ráfaga"""
+    global evaluation_active, current_attempt, target_user_id, target_full_name, evaluation_result, evaluation_event
+    
+    if not SUPABASE_URL or not SUPABASE_KEY:
+        return {"status": "error", "reason": "Supabase no configurado"}
+        
+    if evaluation_active:
+        return {"status": "error", "reason": "Sistema ocupado evaluando"}
+
+    # -------------------------
+    # FILTER 1: VALIDACIÓN DB
+    # -------------------------
+    def check_user():
+        endpoint = f"{SUPABASE_URL}/rest/v1/users?credential_id=eq.{urllib.parse.quote(credential_id)}&select=id,full_name"
+        req = urllib.request.Request(endpoint, method="GET")
+        req.add_header("apikey", SUPABASE_KEY)
+        req.add_header("Authorization", f"Bearer {SUPABASE_KEY}")
+        with urllib.request.urlopen(req, timeout=5) as response:
+            return json.loads(response.read().decode("utf-8"))
+
+    try:
+        user_data = await asyncio.to_thread(check_user)
+    except Exception as e:
+        print("Error en Filter 1:", e)
+        return {"status": "error", "reason": "Error de conexión a BD"}
+
+    if not user_data or len(user_data) == 0:
+        return {"status": "denied", "reason": "Invalid Credential"}
+
+    # -------------------------
+    # PREPARAR FILTER 2
+    # -------------------------
+    target_user_id = user_data[0]["id"]
+    target_full_name = user_data[0]["full_name"]
+    current_attempt = 0
+    evaluation_result = None
+    evaluation_event.clear()
+    
+    # Activar la evaluación en el WebSocket
+    evaluation_active = True
+    
+    # Esperar el resultado pasivamente con Timeout de 10 seg
+    try:
+        await asyncio.wait_for(evaluation_event.wait(), timeout=10.0)
+    except asyncio.TimeoutError:
+        evaluation_active = False
+        return {"status": "error", "reason": "Timeout (¿Cámara desconectada?)"}
+        
+    return evaluation_result
 
 # ==============================
 # DECODIFICAR IMAGEN BASE64
@@ -236,10 +433,13 @@ def parse_model_output(outputs, conf_threshold=0.75):
 # ==============================
 # LÓGICA DE DECISIÓN (EPP)
 # ==============================
-# --- Modifica evaluate_status para actualizar los números ---
-
 def evaluate_status(detections):
     global stats_global
+    
+    # Si no hay absolutamente nada en pantalla (nadie frente a la cámara), no evaluamos.
+    if not detections:
+        return "WAITING"
+        
     labels = [d["label"] for d in detections]
     
     # Lógica de decisión
@@ -255,14 +455,26 @@ def evaluate_status(detections):
     return current_status
 
 
-
 # ==============================
 # WEBSOCKET (TIEMPO REAL)
 # ==============================
 active_connections: List[dict] = []
 
+@app.on_event("shutdown")
+async def shutdown_event():
+    """Cierra todas las conexiones WebSocket para que Uvicorn se detenga inmediatamente"""
+    print("🛑 Cerrando conexiones WebSocket de forma segura...")
+    for client in list(active_connections):
+        try:
+            await client["ws"].close()
+        except Exception:
+            pass
+    active_connections.clear()
+
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket, client_type: str = "kiosk"):
+    global evaluation_active, current_attempt, target_user_id, target_full_name, evaluation_result, evaluation_event
+    
     # Acepta conexión del cliente
     await websocket.accept()
     
@@ -278,6 +490,8 @@ async def websocket_endpoint(websocket: WebSocket, client_type: str = "kiosk"):
             # Recibe mensaje del frontend
             message = await websocket.receive_text()
             data = json.loads(message)
+
+            credential_id = data.get("credential_id") # Capturar la credencial (NFC/Barcode) si existe
 
             # Verifica si es un comando (ej. start_kiosk)
             action = data.get("action")
@@ -314,6 +528,34 @@ async def websocket_endpoint(websocket: WebSocket, client_type: str = "kiosk"):
                 detections = parse_model_output(outputs, conf_threshold=0.20)
                 status = evaluate_status(detections)
 
+                # Si hay una evaluación activa solicitada por el Endpoint NFC
+                if evaluation_active:
+                    current_attempt += 1
+                    
+                    labels = [d["label"] for d in detections]
+                    missing_hardhat = "HARDHAT" not in labels
+                    missing_vest = "VEST" not in labels
+                    
+                    # Condición de éxito (Cualquiera es PASS) o fin de ráfaga (10 frames)
+                    if status == "PASS" or current_attempt >= 10:
+                        final_status = "PASS" if status == "PASS" else "DENIED"
+                        
+                        # 1. Insertar BD
+                        asyncio.create_task(asyncio.to_thread(insert_access_log, target_user_id, final_status, missing_hardhat, missing_vest))
+                        
+                        # 2. Señal Arduino
+                        if final_status == "PASS" and arduino and arduino.is_open:
+                            arduino.write(b"A")
+                            
+                        # 3. Preparar resultado y avisar al endpoint HTTP
+                        if final_status == "PASS":
+                            evaluation_result = {"status": "allowed", "user": target_full_name}
+                        else:
+                            evaluation_result = {"status": "denied", "reason": "Missing PPE"}
+                            
+                        evaluation_active = False
+                        evaluation_event.set()
+
             except Exception as e:
                 print("ERROR EN INFERENCIA:", e)
                 detections = []
@@ -323,7 +565,9 @@ async def websocket_endpoint(websocket: WebSocket, client_type: str = "kiosk"):
             payload_data = {
                 "detections": detections,
                 "status": status,
-                "stats": stats_global
+                "stats": stats_global,
+                "evaluation_active": evaluation_active,
+                "target_user": target_full_name if evaluation_active else None
             }
             
             # 2. Generar imagen optimizada para Admin solo si hay admins conectados
@@ -354,8 +598,29 @@ async def websocket_endpoint(websocket: WebSocket, client_type: str = "kiosk"):
             if tasks:
                 await asyncio.gather(*tasks, return_exceptions=True)
 
-    except WebSocketDisconnect:
-        # Cliente se desconectó
+    except (WebSocketDisconnect, RuntimeError, Exception) as e:
+        # Cliente se desconectó o la conexión fue cerrada por el shutdown
         if client_info in active_connections:
             active_connections.remove(client_info)
-        print(f"Cliente {client_type} desconectado")
+        print(f"Cliente {client_type} desconectado. Motivo: {type(e).__name__}")
+
+# ==============================
+# EJECUTOR PRINCIPAL
+# ==============================
+if __name__ == "__main__":
+    import uvicorn
+    
+    # Soporte para HTTPS (Requerido para activar la cámara en otros dispositivos)
+    cert_path = "192.168.1.74+2.pem"
+    key_path = "192.168.1.74+2-key.pem"
+    ssl_kwargs = {}
+    
+    if os.path.exists(cert_path) and os.path.exists(key_path):
+        ssl_kwargs["ssl_certfile"] = cert_path
+        ssl_kwargs["ssl_keyfile"] = key_path
+        print(f"🔒 Iniciando servidor con soporte HTTPS en el puerto 8000...")
+    else:
+        print("⚠️ Iniciando servidor HTTP sin seguridad (solo funcionará la cámara en localhost).")
+
+    # En Windows, forzar a uvicorn a usar asyncio (selector) en vez de proactor desde la raíz
+    uvicorn.run("app:app", host="0.0.0.0", port=8000, loop="asyncio", reload=False, **ssl_kwargs)

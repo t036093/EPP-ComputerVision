@@ -55,6 +55,11 @@
 
     <div id="standby-screen">System Standby</div>
     
+    <!-- Banner de Evaluación -->
+    <div id="evaluation-banner" style="display:none; position:absolute; top:40px; left:50%; transform:translateX(-50%); background:rgba(59,130,246,0.9); padding:15px 40px; border-radius:15px; font-size:2rem; font-weight:bold; color:white; z-index:20; box-shadow:0 10px 25px rgba(0,0,0,0.5);">
+        EVALUANDO ACCESO...
+    </div>
+    
     <!-- Visible canvas -->
     <canvas id="video-canvas" width="800" height="800"></canvas>
     
@@ -73,6 +78,7 @@
         let localStream = null;
         let animationFrameId = null;
         let lastServerImage = null;
+        let latestDetections = []; // Almacena las bounding boxes recibidas
 
         const protocol = location.protocol === "https:" ? "wss" : "ws";
         const socket = new WebSocket(`${protocol}://${location.host}/ws?client_type=kiosk`);
@@ -90,17 +96,24 @@
                 return;
             }
 
-            if (data.action === "start_kiosk") {
-                startKiosk();
-            } else if (data.action === "stop_kiosk") {
-                stopKiosk();
-            }
-
-            if (data.status) {
-                if (data.status === "DENIED") {
-                    flashBorder('flash-denied');
-                } else if (data.status === "PASS") {
-                    flashBorder('flash-pass');
+            if (data.action === "start_kiosk") startKiosk();
+            else if (data.action === "stop_kiosk") stopKiosk();
+            else if (data.status) {
+                if (data.status === "DENIED") flashBorder("flash-denied");
+                else if (data.status === "PASS") flashBorder("flash-pass");
+                
+                // Actualizar banner de evaluación
+                const banner = document.getElementById('evaluation-banner');
+                if (data.evaluation_active) {
+                    banner.style.display = 'block';
+                    banner.innerText = `RÁFAGA RFID: ${data.target_user}`;
+                } else {
+                    banner.style.display = 'none';
+                }
+                
+                // Actualizar las detecciones
+                if (data.detections) {
+                    latestDetections = data.detections;
                 }
             }
         };
@@ -151,6 +164,9 @@
             // Display raw video frame to user at 60 FPS for a smooth mirror effect
             ctx.drawImage(video, 0, 0, 800, 800);
 
+            // Dibujar las bounding boxes sobre el video
+            drawBoxes(latestDetections);
+
             // Solo enviamos si han pasado 100ms Y el servidor ya terminó de procesar la anterior
             const now = Date.now();
             if (!isWaitingForServer && (now - lastSendTime > 100)) {
@@ -175,6 +191,29 @@
             setTimeout(() => {
                 document.body.classList.remove(className);
             }, 1000);
+        }
+
+        // Dibuja las bounding boxes en el Kiosko
+        function drawBoxes(detections) {
+            detections.forEach(det => {
+                if (!det.box || det.box.length < 4) return;
+                let [x1, y1, x2, y2] = det.box;
+                const boxW = x2 - x1, boxH = y2 - y1;
+
+                ctx.lineWidth = 4;
+                if (det.label === "HARDHAT" || det.label === "VEST") {
+                    ctx.strokeStyle = "rgba(16, 185, 129, 0.9)";
+                    ctx.fillStyle = "rgba(16, 185, 129, 0.9)";
+                } else {
+                    ctx.strokeStyle = "rgba(239, 68, 68, 0.9)";
+                    ctx.fillStyle = "rgba(239, 68, 68, 0.9)";
+                }
+
+                ctx.strokeRect(x1, y1, boxW, boxH);
+                ctx.font = "bold 20px sans-serif";
+                const text = `${det.label} ${(det.score ?? 0).toFixed(2)}`;
+                ctx.fillText(text, x1, y1 > 25 ? y1 - 8 : y1 + 24);
+            });
         }
     </script>
 </body>

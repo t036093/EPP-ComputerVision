@@ -23,7 +23,7 @@
     
     body {
       margin: 0;
-      padding: 20px;
+      padding: 15px;
       font-family: 'Inter', system-ui, -apple-system, sans-serif;
       background-color: var(--bg-color);
       color: var(--text-main);
@@ -31,11 +31,11 @@
     }
 
     .dashboard-container {
-      max-width: 1400px;
+      max-width: 1100px;
       margin: 0 auto;
       display: flex;
       flex-direction: column;
-      gap: 20px;
+      gap: 15px;
     }
 
     /* Glassmorphism Cards */
@@ -44,8 +44,8 @@
       backdrop-filter: blur(12px);
       -webkit-backdrop-filter: blur(12px);
       border: 1px solid var(--border);
-      border-radius: 12px;
-      padding: 20px;
+      border-radius: 8px;
+      padding: 15px;
       box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
     }
 
@@ -60,7 +60,7 @@
     
     .header h1 {
       margin: 0;
-      font-size: 1.5rem;
+      font-size: 1.25rem;
       font-weight: 600;
       letter-spacing: -0.025em;
     }
@@ -84,26 +84,26 @@
     /* Value Cards (Fila Superior) */
     .stats-grid {
       display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-      gap: 20px;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      gap: 15px;
     }
 
     .stat-card {
       display: flex;
       flex-direction: column;
-      gap: 8px;
+      gap: 5px;
     }
 
     .stat-title {
       color: var(--text-muted);
-      font-size: 0.875rem;
+      font-size: 0.75rem;
       font-weight: 500;
       text-transform: uppercase;
       letter-spacing: 0.05em;
     }
 
     .stat-value {
-      font-size: 2rem;
+      font-size: 1.6rem;
       font-weight: 700;
     }
 
@@ -114,7 +114,7 @@
     .middle-row {
       display: grid;
       grid-template-columns: 1fr 1fr;
-      gap: 20px;
+      gap: 15px;
     }
 
     @media (max-width: 900px) {
@@ -125,7 +125,7 @@
     .video-wrapper {
       display: flex;
       flex-direction: column;
-      gap: 15px;
+      gap: 10px;
     }
 
     .video-container {
@@ -157,7 +157,8 @@
       background: rgba(255, 255, 255, 0.05);
       border: 1px solid var(--border);
       color: var(--text-main);
-      padding: 8px 16px;
+      padding: 6px 12px;
+      font-size: 0.85rem;
       border-radius: 6px;
       cursor: pointer;
       font-weight: 500;
@@ -169,7 +170,7 @@
     }
 
     .status-text {
-      font-size: 0.875rem;
+      font-size: 0.8rem;
       color: var(--text-muted);
     }
 
@@ -199,16 +200,16 @@
 
     th {
       color: var(--text-muted);
-      font-size: 0.875rem;
-      font-weight: 500;
-      padding: 12px;
+      font-size: 0.75rem;
+      font-weight: 600;
+      padding: 8px 12px;
       border-bottom: 1px solid var(--border);
     }
 
     td {
-      padding: 12px;
+      padding: 8px 12px;
       border-bottom: 1px solid rgba(255,255,255,0.05);
-      font-size: 0.875rem;
+      font-size: 0.8rem;
     }
 
     .badge {
@@ -266,6 +267,10 @@
         </div>
         
         <div class="video-container">
+          <!-- Banner de Ráfaga Activa -->
+          <div id="admin-eval-banner" style="display:none; position:absolute; top:20px; left:50%; transform:translateX(-50%); background:rgba(59,130,246,0.9); padding:10px 25px; border-radius:10px; font-size:1.2rem; font-weight:bold; color:white; z-index:10; box-shadow:0 5px 15px rgba(0,0,0,0.5); white-space:nowrap;">
+            RÁFAGA RFID ACTIVA
+          </div>
           <img id="video" />
           <canvas id="overlay"></canvas>
         </div>
@@ -295,6 +300,7 @@
             <tr>
               <th>ID LOG</th>
               <th>HORA</th>
+              <th>USUARIO</th>
               <th>RESULTADO</th>
               <th>EPP DETECTADO</th>
             </tr>
@@ -310,36 +316,89 @@
 
   <script>
     // ==========================================
-    // 1. ESTADO PARA SUPABASE (MOCKUP)
-    // ==========================================
-    // Este objeto mantiene la estructura requerida para futura conexión a BD
-    const dashboardState = {
-      filtros: {
-        fechaInicio: "2023-10-01",
-        fechaFin: "2023-10-07"
-      },
-      metricas: {
-        totalIntentos: 1250,
-        cumplimiento: 85,
-        aprobados: 1062,
-        denegados: 188
-      },
-      logsRecientes: [
-        { id: "LOG-1250", hora: "08:30 AM", resultado: "DENIED", epp: "Ninguno" },
-        { id: "LOG-1249", hora: "08:22 AM", resultado: "PASS", epp: "Casco, Chaleco" },
-        { id: "LOG-1248", hora: "08:17 AM", resultado: "DENIED", epp: "Solo Casco" },
-        { id: "LOG-1247", hora: "08:15 AM", resultado: "PASS", epp: "Casco, Chaleco" },
-        { id: "LOG-1246", hora: "08:10 AM", resultado: "PASS", epp: "Casco, Chaleco" }
-      ]
-    };
-
-    // ==========================================
-    // 2. RENDERIZADO INICIAL (MOCK DATA)
+    // 1. OBTENER DATOS EN VIVO (FASTAPI -> SUPABASE)
     // ==========================================
     
-    // Configurar Chart.js
+    async function fetchDashboardData() {
+      try {
+        const response = await fetch('/api/dashboard');
+        const data = await response.json();
+        
+        if (data.error) {
+          console.error("Error del servidor:", data.error);
+          return;
+        }
+
+        // Actualizar Value Cards
+        if (data.metrics) {
+          document.getElementById('val-total').innerText = data.metrics.total_attempts || 0;
+          document.getElementById('val-cumplimiento').innerText = (data.metrics.compliance_percentage || 0) + '%';
+          document.getElementById('val-pass').innerText = data.metrics.total_passed || 0;
+          document.getElementById('val-denied').innerText = data.metrics.total_denied || 0;
+        }
+
+        // Actualizar Tabla de Logs
+        if (data.logs) {
+          const tbody = document.getElementById('logsTableBody');
+          tbody.innerHTML = ''; // Limpiar tabla
+          
+          data.logs.forEach(log => {
+            const tr = document.createElement('tr');
+            const badgeClass = log.status === 'PASS' ? 'pass' : 'denied';
+            
+            // Determinar qué EPP faltó
+            let eppDetectado = "Ok";
+            if (log.status === "DENIED") {
+                let faltantes = [];
+                if (log.missing_hardhat) faltantes.push("Falta Casco");
+                if (log.missing_vest) faltantes.push("Falta Chaleco");
+                eppDetectado = faltantes.join(", ") || "Desconocido";
+            } else {
+                eppDetectado = "Casco y Chaleco";
+            }
+
+            // Formatear hora (de ISO a local)
+            const horaLocal = new Date(log.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+            
+            // ID corto
+            const shortId = log.id.split('-')[0];
+
+            // Nombre de usuario
+            const userName = log.users ? log.users.full_name : 'Desconocido';
+
+            tr.innerHTML = `
+              <td style="color: var(--text-muted)">LOG-${shortId}</td>
+              <td>${horaLocal}</td>
+              <td style="font-weight: 600;">${userName}</td>
+              <td><span class="badge ${badgeClass}">${log.status}</span></td>
+              <td style="color: var(--text-muted)">${eppDetectado}</td>
+            `;
+            tbody.appendChild(tr);
+          });
+        }
+        
+        // Actualizar Gráfica de Tendencias
+        if (data.trend && typeof trendChart !== 'undefined') {
+          trendChart.data.labels = data.trend.labels;
+          trendChart.data.datasets[0].data = data.trend.pass;
+          trendChart.data.datasets[1].data = data.trend.denied;
+          trendChart.update();
+        }
+        
+      } catch (err) {
+        console.error("Error fetching dashboard data:", err);
+      }
+    }
+
+    // Iniciar el ciclo de refresco cada 2 segundos
+    fetchDashboardData();
+    setInterval(fetchDashboardData, 2000);
+
+    // ==========================================
+    // 2. RENDERIZADO DE GRÁFICA
+    // ==========================================
     const ctxChart = document.getElementById('trendChart').getContext('2d');
-    new Chart(ctxChart, {
+    const trendChart = new Chart(ctxChart, {
       type: 'line',
       data: {
         labels: ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo'],
@@ -370,20 +429,6 @@
           x: { grid: { color: 'rgba(255,255,255,0.05)' }, ticks: { color: '#94a3b8' } }
         }
       }
-    });
-
-    // Cargar Tabla de Logs
-    const tbody = document.getElementById('logsTableBody');
-    dashboardState.logsRecientes.forEach(log => {
-      const tr = document.createElement('tr');
-      const badgeClass = log.resultado === 'PASS' ? 'pass' : 'denied';
-      tr.innerHTML = `
-        <td style="color: var(--text-muted)">${log.id}</td>
-        <td>${log.hora}</td>
-        <td><span class="badge ${badgeClass}">${log.resultado}</span></td>
-        <td style="color: var(--text-muted)">${log.epp}</td>
-      `;
-      tbody.appendChild(tr);
     });
 
     // ==========================================
@@ -420,10 +465,27 @@
         if (data.error) {
           statusText.textContent = data.error;
           statusText.style.color = "var(--danger)";
+          if (data.image) {
+            document.getElementById("no-kiosk-msg").style.display = "none";
+            const img = document.getElementById("admin-video");
+            img.style.display = "block";
+            img.src = "data:image/jpeg;base64," + data.image;
+          }
+          
+          // Solo procesamos evalBanner si estamos en el payload de exito
           return;
         }
 
         if (data.action) return;
+        
+        // Banner de evaluación
+        const evalBanner = document.getElementById('admin-eval-banner');
+        if (data.evaluation_active) {
+            evalBanner.style.display = 'block';
+            evalBanner.innerText = `[RÁFAGA EN PROGRESO] Evaluando a: ${data.target_user}`;
+        } else {
+            evalBanner.style.display = 'none';
+        }
 
         // Renderizar Video Optimizado (400x400 estirado por CSS)
         if (data.image) {
